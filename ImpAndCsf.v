@@ -36,9 +36,6 @@ Inductive csf : nat -> Type :=
 Definition lt01 : 0 < 1.
 Proof. apply le_n. Qed.
 
-Definition ltnSn : forall n, n < S n.
-Proof. intros. apply le_n. Qed.
-
 Fixpoint csf_eval {argn: nat} (f: csf argn) : Vector.t nat argn -> nat :=
   match f in csf argn' return Vector.t nat argn' -> nat with
   | Zero => fun (args: Vector.t nat 0) => 0
@@ -60,7 +57,7 @@ Inductive aexp : Type :=
   | AId (x : ident)
   | ASucc (a1: aexp).
 
-Coercion AId : ident >-> aexp.
+(* Coercion AId : ident >-> aexp. *)
 Coercion ANum : nat >-> aexp.
 
 Declare Custom Entry com.
@@ -90,13 +87,6 @@ Notation "x '!->' v ';' st" := (st_update x v st)
 
 Notation "x '!->' v" := (st_update x v empty_st) (at level 0, x constr, v at level 200).
 
-(** * Define evaluation of non-loop Imp *)
-Fixpoint aeval (st : state) (a : aexp) : nat :=
-  match a with
-  | ANum n => n
-  | AId x => st x 
-  | <{a1 ++}> => S (aeval st a1)
-  end.
 Inductive com : Type :=
   | CSkip
   | CAsgn (x : ident) (a : aexp)
@@ -111,6 +101,14 @@ Notation "x ; y" := (CSeq x y)
   (in custom com at level 90,
     right associativity,
     format "'[v' x ; '/' y ']'") : com_scope.
+
+(** * Define evaluation of non-loop Imp *)
+Fixpoint aeval (st : state) (a : aexp) : nat :=
+  match a with
+  | ANum n => n
+  | AId x => st x 
+  | <{a1 ++}> => S (aeval st a1)
+  end.
 
 Fixpoint ceval_st (c: com) (st: state) : state :=
   match c with
@@ -198,7 +196,7 @@ Proof.
     + apply le_S_n. apply le_S. apply H.
 Qed.
 
-Lemma csf_eq_com_proj : forall n i H, 
+Lemma csf_to_com_is_valid_proj : forall n i H, 
   csf_eval (Proj n i H) = ceval (csf_to_com (Proj n i H)).
 Proof.
   intros. apply functional_extensionality. 
@@ -551,14 +549,14 @@ Proof.
         apply vec_fold_max_lemma_3 with (j:=(max n (used_state_idx h))); lia.
 Qed.
 
-(* Main theorem *)
-Definition csf_eq_com_prop (n: nat) (f: csf n) :=
+(* Prove csf_to_com is valid *)
+Definition csf_to_com_is_valid_prop (n: nat) (f: csf n) :=
   csf_eval f = ceval (csf_to_com f).
 
 Lemma comvec_to_com_is_valid: forall m n (gs: Vector.t (csf n) m) args i u ,
   1 <= i <= m ->
   Vector.fold_left max n (Vector.map used_state_idx gs) <= u ->
-  Vector_Forall_csf csf_eq_com_prop gs ->
+  Vector_Forall_csf csf_to_com_is_valid_prop gs ->
   vec_to_state m (Vector.map (fun g' : Vector.t nat n -> nat => g' args)
     (Vector.map csf_eval gs)) (Id i) =
   ceval_st (comvec_to_com (S u) (Vector.map csf_to_com gs))
@@ -593,15 +591,15 @@ Proof.
       * apply H1.
 Qed.
   
-Theorem csf_eq_com: forall (n: nat) (f: csf n),
-  csf_eq_com_prop n f.
+Lemma csf_to_com_is_valid: forall (n: nat) (f: csf n),
+  csf_to_com_is_valid_prop n f.
 Proof.
-  intros. apply csf_ind_strong; unfold csf_eq_com_prop.
+  intros. apply csf_ind_strong; unfold csf_to_com_is_valid_prop.
   - apply functional_extensionality. apply Vector.case0.
     reflexivity.
   - apply functional_extensionality. intros.
     rewrite (Vector.eta args). reflexivity.
-  - apply csf_eq_com_proj.
+  - apply csf_to_com_is_valid_proj.
   - intros. rename H into IHf. rename H0 into IHgs.
     apply functional_extensionality. intros.  
     unfold ceval. cbn [csf_to_com].
@@ -618,9 +616,320 @@ Proof.
     apply IHgs.
 Qed. 
 
-
-(** Proof com_eq_csf  *)
-  Theorem com_eq_csf : forall (c: com),
-  exists (n: nat) (f: csf n), csf_eval f = ceval c.
+(* Main theorem *)
+Theorem csf_eq_com : forall n (f: csf n),
+  exists c, csf_eval f = ceval c.
 Proof.
+  intros. exists (csf_to_com f). apply csf_to_com_is_valid.
+Qed.
+
+(** * Define conversion from Imp to CSF *)
+
+Theorem le_sub: forall a b, 0 < a -> a - (S b) < a.
+Proof. 
+  intros. destruct a.
+  - inversion H.
+  - simpl. apply le_n_S. apply le_sub_l.
+Qed.
+
+Fixpoint skip_to_csfvec n (Hn: 0 < n) i :=
+  match i with
+  | O => []
+  | S i' => Proj n (n - (S i')) (le_sub n i' Hn) :: (skip_to_csfvec n Hn i')
+  end.
+
+Fixpoint const_csf n m :=
+  match m with
+  | O => Comp 0 n Zero []
+  | S m' => Comp 1 n Succ [const_csf n m']
+  end.
+
+(* Inductive in_range_aexp (n: nat) : aexp -> Set :=
+  | IRNum m : in_range_aexp n (ANum m)
+  | IRId x (Hx: x < n) : in_range_aexp n <{ |x| }>
+  | IRSucc a (Ha: in_range_aexp n a) : in_range_aexp n <{ a ++ }>
+. *)
+
+(* Inductive in_range_com (n: nat) : com -> Set :=
+  | IRSkip : in_range_com n <{ skip }>
+  | IRAsgn x a (Ha: in_range_aexp n a) : in_range_com n <{ x := a }>
+  | IRSeq c1 (H1: in_range_com n c1) c2 (H2: in_range_com n c2) : in_range_com n <{ c1; c2 }>
+. *)
+
+Fixpoint in_range_aexp n a :=
+  match a with
+  | ANum m => true
+  | <{ |x| }> => x <? n
+  | <{ a' ++ }> => in_range_aexp n a'
+  end.
+
+Fixpoint in_range_com n c :=
+  match c with
+  | <{ skip }> => true
+  | <{ x := a }> => in_range_aexp n a
+  | <{ c1; c2 }> => in_range_com n c1 && in_range_com n c2
+  end.
+
+(* Fixpoint aexp_to_csf n (Hn: 0 < n) a (Ha: in_range_aexp n a) :=
+  match Ha with
+  | IRNum _ m => const_csf n m
+  | IRId _ x Hx => Proj n x Hx
+  | IRSucc _ a' Ha' => Comp 1 n Succ [aexp_to_csf n Hn a' Ha']
+  end. *)
+
+(* Fixpoint asgn_to_csfvec n (Hn: 0 < n) i x a (Ha: in_range_aexp n a) :=
+  match i with
+  | O => []
+  | S i' =>
+      (if (i =? x)%nat
+        then aexp_to_csf n Hn a Ha
+        else Proj n (n - (S i)) (le_sub n i Hn))
+      :: (asgn_to_csfvec n Hn i' x a Ha)
+  end. *)
+
+Definition proj_csf := const_csf.
+
+Fixpoint aexp_to_csf n (Hn: 0 < n) a :=
+  match a with
+  | ANum m => const_csf n m
+  | <{ |x| }> => proj_csf n x
+      (* if in_range_aexp a then Proj n x Hx else const_csf n O *)
+  | <{ a' ++ }> => Comp 1 n Succ [aexp_to_csf n Hn a']
+  end.
+
+Fixpoint asgn_to_csfvec n (Hn: 0 < n) i x a :=
+  match i with
+  | O => []
+  | S i' =>
+      (if ((n - i) =? x)%nat
+        then aexp_to_csf n Hn a
+        else Proj n (n - (S i')) (le_sub n i' Hn))
+      :: (asgn_to_csfvec n Hn i' x a)
+  end.
+
+Fixpoint compose_csfvec n (Hn: 0 < n) {m} (cv2: Vector.t (csf n) m) cv1 :=
+  match cv2 with 
+  | [] => []
+  | (c :: cv2') => Comp n n c cv1 :: (compose_csfvec n Hn cv2' cv1)
+  end.
+
+(* Fixpoint com_to_csfvec n (Hn: 0 < n) c (Hc: in_range_com n c) :=
+  match Hc with
+  | IRSkip _ => skip_to_csfvec n Hn n
+  | IRAsgn _ x a Ha => asgn_to_csfvec n Hn n x a Ha
+  | IRSeq _ c1 H1 c2 H2 => compose_csfvec n Hn (com_to_csfvec n Hn c1 H1) (com_to_csfvec n Hn c2 H2)
+  end. *)
+
+Fixpoint com_to_csfvec n (Hn: 0 < n) c  :=
+  match c with
+  | <{ skip }> => skip_to_csfvec n Hn n
+  | <{ x := a }> => asgn_to_csfvec n Hn n x a
+  | <{ c1; c2 }> => compose_csfvec n Hn (com_to_csfvec n Hn c2) (com_to_csfvec n Hn c1)
+  end.
+
+Fixpoint used_max_idx_in_aexp a :=
+  match a with
+  | ANum _ => O
+  | <{ |x| }> => x
+  | <{ a' ++ }> => used_max_idx_in_aexp a'
+  end.
+
+Fixpoint used_max_idx_in_com c :=
+  match c with
+  | <{ skip }> => O
+  | <{ x := a }> => used_max_idx_in_aexp a
+  | <{ c1; c2 }> => max (used_max_idx_in_com c1) (used_max_idx_in_com c2)
+  end.
+
+Definition com_to_csf c :=
+  let n' := used_max_idx_in_com c in
+  let Hn := lt_0_succ n' in
+  let n := S n' in
+    Comp n n (Proj n 0 Hn) (com_to_csfvec n Hn c ).
+
+Fixpoint vec_to_state' {n: nat} (m: nat) (v: Vector.t nat n) : state :=
+  match v with
+  | [] => empty_st
+  | (x :: v') => ((Id (m - n))) !-> x; (vec_to_state' m v')
+  end.
+
+Definition ceval' (c: com) {argn: nat} (args: Vector.t nat argn) : nat :=
+  ((ceval_st c) (vec_to_state' argn args)) (Id 0).
+
+Lemma skip_to_csfvec_lemma : forall n (Hn: 0 < n) i (Hi: i < n),
+  (skip_to_csfvec n Hn n) [@<\ Hi />] = Proj n i Hi.
+Proof. Admitted.
+
+Lemma skip_to_csfvec_is_valid : forall n (Hn: 0 < n) i (Hi: i < n) (args : Vector.t nat n),
+  ceval_st <{ skip }> (vec_to_state' n args) (Id i) =
+  csf_eval (skip_to_csfvec n Hn n) [@<\ Hi />] args.
+Proof.
+  intros. rewrite skip_to_csfvec_lemma. simpl.
 Admitted.
+
+Lemma asgn_to_csfvec_lemma_1 : forall n (Hn: 0 < n) i (Hi: i < n) a,
+  (asgn_to_csfvec n Hn n i a) [@<\ Hi />] = aexp_to_csf n Hn a.
+Proof. Admitted.
+
+Lemma asgn_to_csfvec_lemma_2 : forall n (Hn: 0 < n) i (Hi: i < n) x a,
+  i <> x ->
+  (asgn_to_csfvec n Hn n x a) [@<\ Hi />] = Proj n i Hi.
+Proof. Admitted.
+
+Lemma asgn_to_csfvec_is_valid : forall n (Hn: 0 < n) i (Hi: i < n) x a (args : Vector.t nat n),
+  ceval_st <{ x := a }> (vec_to_state' n args) (Id i) =
+  csf_eval (asgn_to_csfvec n Hn n x a) [@<\ Hi />] args.
+Proof.
+  intros. destruct (i =? x) eqn: Eqix. 
+  - apply Nat.eqb_eq in Eqix. subst i.
+    rewrite asgn_to_csfvec_lemma_1. admit.
+  - rewrite asgn_to_csfvec_lemma_2.
+    * simpl. rewrite Eqix. admit.
+    * intro. apply Nat.eqb_eq in H.
+      rewrite H in Eqix. discriminate.
+Admitted.
+
+Lemma comp_proj_lemma : forall m n i (Hi: i < m) gs,
+  csf_eval (Comp m n (Proj m i Hi) gs) = csf_eval (gs [@<\ Hi />]).
+Proof.
+  intros. apply functional_extensionality.
+  intros. simpl. 
+  generalize dependent args. generalize dependent i.
+  induction gs.
+  - inversion Hi.
+  - intros. cbn [Vector.map]. destruct i.
+    + reflexivity.
+    + simpl. apply IHgs.
+Qed.
+
+Lemma compose_csfvec_lemma : forall n (Hn: 0 < n) i (Hi: i < n) c1 c2,
+  (compose_csfvec n Hn (com_to_csfvec n Hn c2) (com_to_csfvec n Hn c1)) [@<\ Hi />]
+  = Comp n n (com_to_csfvec n Hn c2) [@<\ Hi />] (com_to_csfvec n Hn c1).
+Proof. Admitted.
+
+Lemma com_to_csfvec_is_valid : forall c n (Hn: 0 < n) i (Hi: i < n) (args : Vector.t nat n),
+  (ceval_st c (vec_to_state' n args)) (Id i) =
+  (csf_eval ((com_to_csfvec n Hn c) [@ <\ Hi />])) args.
+Proof.
+  induction c; intros.
+  - apply skip_to_csfvec_is_valid.
+  - destruct x as [x]. cbn [com_to_csfvec]. apply asgn_to_csfvec_is_valid.
+  - simpl. rewrite compose_csfvec_lemma. simpl.
+    rewrite <- IHc2. 
+Admitted.
+
+Lemma com_to_csf_is_valid : forall c, 
+  ceval' c = csf_eval (com_to_csf c).
+Proof.
+  intros. apply functional_extensionality.
+  intros. unfold ceval'.
+  cbv [com_to_csf]. rewrite comp_proj_lemma.
+  apply com_to_csfvec_is_valid.
+Qed.
+  
+Theorem com_eq_csf : forall (c: com),
+  exists (n: nat) (f: csf n), ceval' c = csf_eval f.
+Proof.
+  intros. exists _, (com_to_csf c).
+  apply com_to_csf_is_valid.
+Qed.
+
+(* Lemma com_to_csf_is_valid : forall c, 
+  ceval' c = csf_eval (com_to_csf c).
+Proof.
+  intros. apply functional_extensionality. unfold ceval'.
+  intros. cbv [com_to_csf]. cbn [csf_eval].
+  rewrite (Vector.eta args). cbn [com_to_csfvec].
+  induction c; intros.
+  - rewrite (Vector.eta args). reflexivity.
+
+
+  (* intros. apply functional_extensionality. unfold ceval'.
+  induction c; intros.
+  - rewrite (Vector.eta args). reflexivity. *)
+  - cbn [ceval_st used_max_idx_in_com]. destruct x as [x].
+    cbv [com_to_csf]. cbn [used_max_idx_in_com com_to_csfvec asgn_to_csfvec].
+    cbn [csf_eval]. simpl.  cbv [Vector.map].
+    simpl. destruct x as [|x'].
+    + simpl in args.  
+    
+(* Lemma com_to_csfvec_is_valid : forall c i (Hi: i <= (used_max_idx_in_com c)) (args : Vector.t nat (S (used_max_idx_in_com c))),
+  (ceval_st c (vec_to_state' (used_max_idx_in_com c) args)) (Id i) =
+  csf_eval (Comp (S (used_max_idx_in_com c)) (S (used_max_idx_in_com c))
+  (Proj (S (used_max_idx_in_com c)) i (le_n_S _ _ Hi)) (com_to_csfvec (S (used_max_idx_in_com c)) (lt_0_succ (used_max_idx_in_com c)) c)) args. *)
+
+(* Lemma com_to_csfvec_is_valid : forall c i (Hi: i <= (used_max_idx_in_com c)) (args : Vector.t nat (S (used_max_idx_in_com c))),
+  (ceval_st c (vec_to_state' (S (used_max_idx_in_com c)) args)) (Id i) =
+  (csf_eval ((com_to_csfvec (S (used_max_idx_in_com c)) (lt_0_succ (used_max_idx_in_com c)) c) [@ <\ (le_n_S _ _ Hi) />])) args.
+Proof.
+  intros. induction c.
+  - simpl in Hi. inversion Hi. subst i.
+    simpl in args. rewrite (Vector.eta args). reflexivity.
+  - cbn [used_max_idx_in_com] in *. destruct x as [x].
+    cbn [ceval_st com_to_csfvec asgn_to_csfvec].
+    (* generalize dependent n. *)
+    induction (used_max_idx_in_aexp a) eqn: Eqn.
+    + rewrite (Vector.eta args). inversion Hi. subst i.
+      cbn [asgn_to_csfvec vec_to_state']. simpl.
+      destruct x.
+      * admit.
+      * reflexivity.
+    + destruct x.
+      * destruct i.
+        { simpl. replace (n - n =? 0) with true by (rewrite sub_diag; reflexivity). 
+          admit.
+        }
+        { simpl. simpl in IHn. admit. } 
+       
+      
+Admitted. *)
+
+(* Lemma used_max_idx_lemma_aexp :
+  forall a, in_range_aexp (S (used_max_idx_in_aexp a)) a.
+Proof.
+  induction a.
+  - constructor.
+  - destruct x. apply IRId. simpl. lia.
+  - simpl. constructor. apply IHa.
+Qed.
+
+Lemma in_range_aexp_weaken :
+  forall a m n, m <= n -> in_range_aexp m a -> in_range_aexp n a.
+Proof.
+  intros. induction H0.
+  - constructor.
+  - constructor. lia.
+  - constructor. assumption.
+Qed.
+
+Lemma in_range_com_weaken :
+  forall c m n, m <= n -> in_range_com m c -> in_range_com n c.
+Proof.
+  intros. induction H0.
+  - constructor.
+  - constructor. apply in_range_aexp_weaken with (m:=m); assumption.
+  - constructor; assumption. 
+Qed.
+
+Lemma used_max_idx_lemma :
+  forall c, in_range_com (S (used_max_idx_in_com c)) c.
+Proof.
+  induction c.
+  - simpl. constructor.
+  - destruct x. simpl. apply IRAsgn.
+    apply used_max_idx_lemma_aexp.
+  - simpl. apply IRSeq.
+    + apply in_range_com_weaken with (m:=(S (used_max_idx_in_com c1))).
+      * lia. * assumption.
+    + apply in_range_com_weaken with (m:=(S (used_max_idx_in_com c2))).
+      * lia. * assumption.
+Qed. *)
+
+(* 
+  Id 0 = | i | .. proj i n
+  Id i = x; c .. c ([proj 0 n; proj 1 n; ... x; proj i n; .. proj n-1 n; ])
+  Id 0 = n ++ .. succ 
+  skip .. zero
+  c1; c2 .. st =[ c1 ]=> st', c2 (state_to_arg st')
+
+*) *)
