@@ -6,3 +6,4 @@
 *.glob
 *.aux
 *.Makefile.d
+./sysf_pts
