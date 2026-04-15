@@ -6,43 +6,13 @@ From Stdlib Require Import Lia.
 From Stdlib Require Import List. Import ListNotations.
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import Program.Equality.
+From Stdlib Require Import FunctionalExtensionality.
 
 From PLC Require Import Maps.
 
 (** * Polymorphic lambda calculus *)
 
-(** ** Syntax *)
-
 (** *** Types *)
-
-(**
-<<
-t ::= t -> t     (* Function *)
-    | forall t   (* Type generalization *)
-    | i          (* Type variable (DeBruijn index) *)
-    | unit       (* Unit type *)
-    | t * t      (* Product *)
-    | t + t      (* Sum *)
->>
-  *)
-Fixpoint bnat (n : nat) : Type :=
-  match n with
-  | O => Empty_set
-  | S n => option (bnat n)
-  end.
-
-(* Inductive ty (n : nat) : Type :=
-| Tyvar : bnat n -> ty n
-| Arrow : ty n -> ty n -> ty n
-| Forall : ty (S n) -> ty n
-| Unit : ty n
-. *)
-
-(* Arguments Arrow  {n}.
-Arguments Forall {n}.
-Arguments Tyvar  {n}.
-Arguments Unit   {n}. *)
-
 Inductive ty : Type :=
   | TyVar (X: string)
   | TyArrow (T1 T2: ty)
@@ -285,50 +255,8 @@ Inductive has_type : context -> tm -> ty -> Prop :=
 
 where "<{ Gamma '|--' t '\in' T }>" := (has_type Gamma t T) : plc_scope.
 
-Hint Constructors has_type : core.
-
-Example has_type_abs_example :
-  <{ empty |-- \x:Unit, x \in Unit -> Unit }>.
-Proof.
-  apply T_Abs.
-  apply T_Var.
-  reflexivity.
-Qed.
-
-Example has_type_app_example :
-  <{ empty |-- (\x:Unit, x) unit \in Unit }>.
-Proof.
-  eapply T_App.
-  - apply has_type_abs_example.
-  - apply T_Unit.
-Qed.
-
-Example typing_example_1 :
-  <{ empty |-- \x:Unit, x \in Unit -> Unit }>.
-Proof.
-  apply T_Abs.
-  apply T_Var.
-  reflexivity.
-Qed.
-
-Example typing_example_2 :
-  <{ empty |-- \\X, \x:X, x \in -/X, X -> X }>.
-Proof.
-  apply T_TAbs.
-  apply T_Abs.
-  apply T_Var.
-  reflexivity.
-Qed.
-
-Example typing_example_3 :
-  <{ empty |-- (\\X, \x:X, x) [Unit] \in Unit -> Unit }>.
-Proof.
-  eapply T_TApp.
-  2: (apply T_TAbs; apply T_Abs; apply T_Var; reflexivity).
-  reflexivity.
-Qed.
-
 (* Props *)
+(* Progress *)
 Lemma normal_form_abs: forall t T1 T2, 
   value t ->
   <{ empty |-- t \in T1 -> T2 }> ->
@@ -373,49 +301,357 @@ Proof.
   - left. apply v_unit.
 Qed.
 
+(* Preservation *)
+Lemma weakening : forall Gamma Gamma' t T,
+     includedin Gamma Gamma' ->
+     <{ Gamma  |-- t \in T }>  ->
+     <{ Gamma' |-- t \in T }>.
+Proof.
+  intros Gamma Gamma' t T H Ht.
+  generalize dependent Gamma'.
+  induction Ht; intros; econstructor.
+  - apply H0. assumption.
+  - apply IHHt. apply includedin_update. apply H.
+  - apply IHHt1. assumption.
+  - apply IHHt2. assumption.
+  - apply IHHt. assumption.
+  - apply H.
+  - apply IHHt. assumption.
+Qed.
+
+Lemma weakening_empty : forall Gamma t T,
+     <{ empty |-- t \in T }> ->
+     <{ Gamma |-- t \in T }>.
+Proof.
+  intros Gamma t T.
+  eapply weakening.
+  unfold includedin. intros. discriminate.
+Qed.
+
 Lemma type_preservation_subst: forall Gamma x s S t T,
   <{ x |-> S; Gamma |-- t \in T }> ->
-  <{ Gamma |-- s \in S }> ->
+  <{ empty |-- s \in S }> ->
   <{ Gamma |-- [x:=s] t \in T }>.
 Proof.
   intros Gamma x s S t T Ht Hs.
   remember (x |-> S; Gamma) as Gamma'.
-  induction Ht; simpl; subst.
+  generalize dependent Gamma.
+  induction Ht; simpl; intros; subst.
   - unfold update in H. unfold t_update in H.
     destruct (x=?x0)%string eqn: Eqx.
-    + inversion H. subst. assumption.
+    + inversion H. subst. apply weakening_empty.
+      assumption.
     + apply T_Var. apply H.
   - destruct (x=?x0)%string eqn: Eqx.
-    (* + apply  *)
-Admitted.
+    + apply T_Abs.
+      apply weakening with (Gamma:=x0 |-> T2; x |-> S; Gamma0).
+      * unfold includedin. intros.
+        apply eqb_eq in Eqx. subst x.
+        rewrite <- update_shadow with (v1:=S). apply H.
+      * apply Ht.
+    + apply T_Abs. apply IHHt.
+      apply update_permute. apply eqb_neq. apply Eqx.
+  - eapply T_App.
+    * apply IHHt1. reflexivity.
+    * apply IHHt2. reflexivity.
+  - apply T_TAbs. apply IHHt. reflexivity.
+  - apply T_TApp with (X:=X0) (T1:=T1).
+    * reflexivity.
+    * apply IHHt. reflexivity.
+  - apply T_Unit.
+Qed.
 
-Lemma type_preservation_tysubst: forall Gamma X S t T,
-  <{ Gamma |-- t \in T }> ->
-  <{ Gamma |-- [[X:=S]]t \in [X:=S]T }>.
+Definition context_ty_subst X S (Gamma: context) : context :=
+    fun x =>
+      match Gamma x with
+      | Some T => Some (<{{[X:=S] T}}>)
+      | None => None
+      end.
+
+Inductive not_tyvar_appears_free_in_ty (X: string) : ty -> Prop :=
+  | ntvaf_var : forall Y,
+      X <> Y ->
+      not_tyvar_appears_free_in_ty X (TyVar Y)
+  | ntvaf_arrow : forall T1 T2,
+      not_tyvar_appears_free_in_ty X T1 ->
+      not_tyvar_appears_free_in_ty X T2 ->
+      not_tyvar_appears_free_in_ty X <{{T1 -> T2}}>
+  | ntvaf_forall_bound : forall T1,
+      not_tyvar_appears_free_in_ty X <{{-/X, T1}}>
+  | ntvaf_forall_free : forall Y T1,
+      X <> Y ->
+      not_tyvar_appears_free_in_ty X T1 ->
+      not_tyvar_appears_free_in_ty X <{{-/Y, T1}}>
+  | ntvaf_unit :
+      not_tyvar_appears_free_in_ty X <{{Unit}}>.
+
+Definition closed T :=
+  forall X, not_tyvar_appears_free_in_ty X T.
+
+Lemma ntvaf_subst_ty : forall X S T,
+  not_tyvar_appears_free_in_ty X T ->
+  T = <{{ [X:=S] T }}>.
 Proof.
-  intros Gamma X S t T H.
-  induction H; simpl.
+  intros. induction H; simpl;
+  try rewrite eqb_refl;
+  try (apply eqb_neq in H; rewrite H);
+  try reflexivity.
+  - rewrite <- IHnot_tyvar_appears_free_in_ty1.
+    rewrite <- IHnot_tyvar_appears_free_in_ty2.
+    reflexivity.
+  - rewrite <- IHnot_tyvar_appears_free_in_ty. reflexivity.
+Qed.
+
+Lemma update_subst_context : forall x X S T Gamma,
+  context_ty_subst X S <{ x |-> T; Gamma }> =
+  <{ x |-> <{{[X:=S]T}}> ; (context_ty_subst X S Gamma) }> .
+Proof.
+  intros. apply functional_extensionality.
+  intro y. unfold context_ty_subst, update, t_update.
+  destruct (x0 =? y)%string; reflexivity.
+Qed.
+
+Inductive not_tyvar_appears_bounded_in_ty (X: string) : ty -> Prop :=
+| ntvab_var : forall Y,
+    not_tyvar_appears_bounded_in_ty X (TyVar Y)
+| ntvab_arrow : forall T1 T2,
+    not_tyvar_appears_bounded_in_ty X T1 ->
+    not_tyvar_appears_bounded_in_ty X T2 ->
+    not_tyvar_appears_bounded_in_ty X <{{T1 -> T2}}>
+| ntvab_forall : forall Y T1,
+    X <> Y ->
+    not_tyvar_appears_bounded_in_ty X T1 ->
+    not_tyvar_appears_bounded_in_ty X <{{-/Y, T1}}>
+| ntvab_unit :
+    not_tyvar_appears_bounded_in_ty X <{{Unit}}>
+.
+
+Inductive not_tyvar_appears_bounded_in_term (X: string) : tm -> Prop :=
+  | ntvabt_var : forall x,
+      not_tyvar_appears_bounded_in_term X (TmVar x)
+  | ntvabt_abs : forall x T t,
+      not_tyvar_appears_bounded_in_term X t ->
+      not_tyvar_appears_bounded_in_ty X T ->
+      not_tyvar_appears_bounded_in_term X (TmAbs x T t)
+  | ntvabt_app : forall t1 t2,
+      not_tyvar_appears_bounded_in_term X t1 ->
+      not_tyvar_appears_bounded_in_term X t2 ->
+      not_tyvar_appears_bounded_in_term X (TmApp t1 t2)
+  | ntvabt_tyabs : forall Y t,
+      X <> Y ->
+      not_tyvar_appears_bounded_in_term X t ->
+      not_tyvar_appears_bounded_in_term X (TmTyAbs Y t)
+  | ntvabt_tyapp : forall t T,
+      not_tyvar_appears_bounded_in_term X t ->
+      not_tyvar_appears_bounded_in_ty X T ->
+      not_tyvar_appears_bounded_in_term X (TmTyApp t T)
+  | ntvabt_unit :
+      not_tyvar_appears_bounded_in_term X TmUnit
+.
+
+Definition not_tyvar_appears_bounded_in_context (X: string) (Gamma: context) :=
+  forall x T, Gamma x = Some T -> not_tyvar_appears_bounded_in_ty X T .
+
+Lemma ntvab_subst_preservation : forall X Y T S,
+  not_tyvar_appears_bounded_in_ty X T ->
+  not_tyvar_appears_bounded_in_ty X S ->
+  not_tyvar_appears_bounded_in_ty X <{{ [Y := S] T }}>.
+Proof.
+  intros X Y T S HT HS. induction T; simpl.
+  - destruct (Y=?X0)%string; assumption.
+  - inversion HT. constructor.
+    + apply IHT1. assumption.
+    + apply IHT2. assumption.
+  - destruct (Y=?X0)%string.
+    + assumption.
+    + inversion HT. constructor;
+      try apply IHT; assumption.
+  - assumption.
+Qed.
+
+Lemma ntvab_typing : forall X Gamma t T,
+  not_tyvar_appears_bounded_in_context X Gamma ->
+  not_tyvar_appears_bounded_in_term X t ->
+  <{ Gamma |-- t \in T }> ->
+  not_tyvar_appears_bounded_in_ty X T.
+Proof.
+  intros X Gamma t T Hctx Htm Hty.
+  induction Hty; inversion Htm; subst.
+  - apply Hctx with (x:=x0). assumption.
+  - apply ntvab_arrow.
+    + unfold not_tyvar_appears_bounded_in_context, update, t_update in Hctx.
+      assumption.
+    + apply IHHty; try assumption.
+      intros y Ty Hy. unfold update, t_update in Hy.
+      destruct (x0 =? y)%string.
+      * inversion Hy. inversion Htm. subst. assumption.
+      * apply Hctx with (x:=y). assumption.
+  - apply IHHty1 in Hctx; try assumption.
+    inversion Hctx; assumption.
+  - apply ntvab_forall.
+    + assumption.
+    + apply IHHty; assumption.
+  - apply IHHty in Hctx; try assumption.
+    inversion Hctx. inversion Htm.
+    apply ntvab_subst_preservation; assumption.
+  - apply ntvab_unit.
+Qed.
+
+Lemma ty_subst_distribution : forall X Y S1 S2 T,
+  X <> Y ->
+  not_tyvar_appears_bounded_in_ty X T ->
+  not_tyvar_appears_free_in_ty Y S1 ->
+  <{{ [X:=S1]([Y:=S2]T) }}> = <{{ [Y:=[X:=S1]S2]([X:=S1]T) }}>.
+Proof.
+  intros X Y S1 S2 T Neq H1 H2.
+  induction T.
   - simpl.
-Admitted.
+    destruct (Y=?X0)%string eqn: EqY;
+    destruct (X=?X0)%string eqn: EqX;
+    simpl.
+    + exfalso.
+      apply eqb_eq in EqX. apply eqb_eq in EqY. subst.
+      apply Neq. reflexivity.
+    + rewrite EqY. reflexivity.
+    + rewrite EqX. apply ntvaf_subst_ty. apply H2.
+    + rewrite EqX. rewrite EqY. reflexivity.
+  - simpl. inversion H1.
+    rewrite IHT1; try assumption.
+    rewrite IHT2; try assumption.
+    reflexivity.
+  - inversion H1. simpl.
+    apply eqb_neq in H3 as NeqX.
+    destruct (Y=?X0)%string eqn: EqY; simpl.
+    + rewrite NeqX. apply eqb_eq in EqY. subst.
+      simpl. rewrite eqb_refl. reflexivity.
+    + rewrite NeqX. rewrite IHT.
+      * simpl. rewrite EqY. reflexivity. 
+      * assumption.
+  - reflexivity.
+Qed.
 
-
-Theorem type_preservation: forall Gamma t t' T,
+Lemma type_preservation_tysubst : forall Gamma Gamma' X S t T,
   <{ Gamma |-- t \in T }> ->
-  t --> t' ->
-  <{ Gamma |-- t' \in T }>.
+  not_tyvar_appears_bounded_in_context X Gamma ->
+  not_tyvar_appears_bounded_in_term X t ->
+  closed S ->
+  Gamma' = context_ty_subst X S Gamma ->
+  <{ Gamma' |-- [[X:=S]]t \in [X:=S]T }>.
 Proof.
-  intros Gamma t t' T HT.
+  intros Gamma Gamma' X S t T H.
+  generalize dependent Gamma'.
+  induction H; simpl; intros; subst.
+  - apply T_Var. unfold context_ty_subst in *.
+    destruct (Gamma x0).
+    + f_equal. injection H as H'. rewrite H'. reflexivity.
+    + discriminate.
+  - apply T_Abs. rewrite <- update_subst_context.
+    apply IHhas_type.
+    + unfold not_tyvar_appears_bounded_in_context.
+      unfold update, t_update. intros y T subH.
+      destruct (x0 =? y)%string.
+      * inversion subH. inversion H1. subst. assumption.
+      * unfold not_tyvar_appears_bounded_in_context in H0.
+        apply H0 with y. assumption.
+    + inversion H1. assumption.
+    + assumption. 
+    + reflexivity.
+  - eapply T_App.
+    + apply IHhas_type1;
+      try reflexivity; inversion H2; assumption.
+    + apply IHhas_type2;
+      try reflexivity; inversion H2; assumption.
+  - inversion H1. apply eqb_neq in H5. rewrite H5. apply T_TAbs.
+    apply IHhas_type; try reflexivity; assumption.
+  - inversion H2.
+    apply ntvab_typing with (X:=X) in H0; try assumption.
+    inversion H0. 
+    apply T_TApp with (X:=X0) (T1:=<{{[X:=S]T1}}>).
+    + apply ty_subst_distribution; try assumption.
+      * apply H3. 
+    + apply eqb_neq in H9. 
+      simpl in IHhas_type. rewrite H9 in IHhas_type. 
+      apply IHhas_type;
+      try reflexivity; inversion H2; assumption.
+    - apply T_Unit.
+Qed.
+
+Inductive bounded_tyvar_unique : tm -> Prop :=
+  | btvuni_var : forall x,
+      bounded_tyvar_unique (TmVar x)
+  | btvuni_abs : forall x T t,
+      bounded_tyvar_unique t ->
+      bounded_tyvar_unique (TmAbs x T t)
+  | btvuni_app : forall t1 t2,
+      bounded_tyvar_unique t1 ->
+      bounded_tyvar_unique t2 ->
+      bounded_tyvar_unique (TmApp t1 t2)
+  | btvuni_tyabs : forall X t,
+      not_tyvar_appears_bounded_in_term X t ->
+      bounded_tyvar_unique t ->
+      bounded_tyvar_unique (TmTyAbs X t)
+  | btvuni_tyapp : forall t T,
+      bounded_tyvar_unique t ->
+      bounded_tyvar_unique (TmTyApp t T)
+  | btvuni_unit :
+      bounded_tyvar_unique TmUnit
+.
+
+Inductive applied_type_is_closed : tm -> Prop :=
+  | atic_var : forall x,
+      applied_type_is_closed (TmVar x)
+  | atic_abs : forall x T t,
+      applied_type_is_closed t ->
+      applied_type_is_closed (TmAbs x T t)
+  | atic_app : forall t1 t2,
+      applied_type_is_closed t1 ->
+      applied_type_is_closed t2 ->
+      applied_type_is_closed (TmApp t1 t2)
+  | atic_tyabs : forall X t,
+      applied_type_is_closed t ->
+      applied_type_is_closed (TmTyAbs X t)
+  | atic_tyapp : forall t T,
+      applied_type_is_closed t ->
+      closed T ->
+      applied_type_is_closed (TmTyApp t T)
+  | atic_unit :
+      applied_type_is_closed TmUnit
+.
+
+Theorem type_preservation: forall t t' T,
+  bounded_tyvar_unique t ->
+  applied_type_is_closed t ->
+  <{ empty |-- t \in T }> ->
+  t --> t' ->
+  <{ empty |-- t' \in T }>.
+Proof.
+  intros t t' T Hbounded Hclosed HT.
   generalize dependent t'.
+  remember empty as Gamma.
   induction HT;
   intros t' HSt; inversion HSt; subst.
-  - inversion HT1. admit.
+  - inversion HT1. subst.
+    apply type_preservation_subst with (S:=T2).
+    * apply H1.
+    * apply HT2.
   - apply T_App with T2; try assumption.
-    apply IHHT1. apply H2.
+    inversion Hbounded. inversion Hclosed.
+    apply IHHT1; try reflexivity; assumption.
   - apply T_App with T2; try assumption.
-    apply IHHT2. apply H3.
+    inversion Hbounded. inversion Hclosed.
+    apply IHHT2; try reflexivity; assumption.
   - eapply T_TApp.  
     * reflexivity.
-    * apply IHHT. assumption.
-  - admit.
-Admitted.
+    * inversion Hbounded. inversion Hclosed.
+    apply IHHT; try reflexivity; assumption.
+  - inversion HT.
+    apply type_preservation_tysubst with empty.
+    + assumption.
+    + unfold not_tyvar_appears_bounded_in_context.
+      intros. discriminate.
+    + inversion Hbounded. inversion H6. subst. assumption.
+    + inversion Hclosed. assumption.
+    + apply functional_extensionality.
+      unfold context_ty_subst. reflexivity.
+Qed.
  
