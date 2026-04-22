@@ -1,3 +1,6 @@
 -R . PLC
 ./Maps.v
 ./PLC.v
+./core.v
+./unscoped.v
+./TyAndTm.v
