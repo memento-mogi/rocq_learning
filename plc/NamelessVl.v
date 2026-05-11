@@ -2,7 +2,7 @@ From Stdlib Require Import Nat.
 From Stdlib Require Import List.
 From Stdlib Require Import FunctionalExtensionality.
 
-From PLC Require Export Maps TyAndTm.
+From PLC Require Export Maps TyTmVl.
 
 Declare Scope plc_scope.
 Open Scope plc_scope.
@@ -12,14 +12,11 @@ Declare Custom Entry plc_tm.
 Declare Custom Entry plc_tysubst.
 Declare Custom Entry plc_tmsubst.
 
-(* 変数に関するフォールバック *)
 Notation "x" := x (in custom plc_ty at level 0, x constr at level 0) : plc_scope.
 Notation "x" := x (in custom plc_tm at level 0, x constr at level 0) : plc_scope.
 
-(* 型と項をくくるための括弧表記 *)
 Notation "<{{ T }}>" := T (T custom plc_ty at level 99) : plc_scope.
 
-(* ----- 型 (ty) の Notation ----- *)
 Notation "( T )" := T (in custom plc_ty, T custom plc_ty at level 99) : plc_scope.
 Notation "T1 -> T2" := (TyArrow T1 T2) (in custom plc_ty at level 50, right associativity) : plc_scope.
 Notation "'-/,' T" := (TyForall T) (in custom plc_ty at level 90, T custom plc_ty at level 90) : plc_scope.
@@ -27,34 +24,15 @@ Notation "'Unit'" := TyUnit (in custom plc_ty at level 0) : plc_scope.
 
 Notation "<{ t }>" := t (t custom plc_tm at level 200) : plc_scope.
 
-(* ----- 項 (term) の Notation ----- *)
 Notation "( t )" := t (in custom plc_tm, t custom plc_tm at level 99) : plc_scope.
 Notation "'unit'" := TmUnit (in custom plc_tm at level 0) : plc_scope.
-
-(* 関数適用 (左結合) *)
 Notation "t1 t2" := (TmApp t1 t2) (in custom plc_tm at level 11, left associativity) : plc_scope.
-(* 関数抽象: \:T, t *)
 Notation "\: T ',' t" := (TmAbs T t) (in custom plc_tm at level 90, T custom plc_ty at level 99, t custom plc_tm at level 90) : plc_scope.
-
-(* 型適用: t [T] *)
 Notation "t [ T ]" := (TmTApp t T) (in custom plc_tm at level 11, t custom plc_tm, T custom plc_ty at level 0) : plc_scope.
 Notation "'\\,' t" := (TmTAbs t) (in custom plc_tm at level 90, t custom plc_tm at level 90) : plc_scope.
 
 Coercion var_ty : nat >-> ty.
 Coercion var_vl : nat >-> vl.
-
-Definition x : string := "x".
-Definition y : string := "y".
-Definition z : string := "z".
-Definition X : string := "X".
-Definition Y : string := "Y".
-Definition Z : string := "Z".
-Hint Unfold x : core.
-Hint Unfold y : core.
-Hint Unfold z : core.
-Hint Unfold X : core.
-Hint Unfold Y : core.
-Hint Unfold Z : core.
 
 Definition sigma_tm_empty : nat -> vl := fun n => var_vl n.
 Definition sigma_tm_one (x: nat) (s: vl) : nat -> vl :=
@@ -91,6 +69,9 @@ Scheme tm_mut_ind := Induction for tm Sort Prop
 with   vl_mut_ind := Induction for vl Sort Prop.
 
 Combined Scheme tm_vl_mut_ind from tm_mut_ind, vl_mut_ind.
+
+Ltac aunfold := unfold core.funcomp, unscoped.scons, unscoped.shift, unscoped.id.
+Ltac asolve := simpl; asimpl; aunfold; simpl; try reflexivity.
 
 Definition beta_red t v := 
   ren_tm id Nat.pred (
@@ -149,8 +130,6 @@ Definition context := list ty.
 
 Scheme Equality for ty.
 Notation "T1 '=^?' T2" := (ty_beq T1 T2) (at level 70, no associativity).
-
-
 
 Definition typing_beta_red T U := 
   ren_ty Nat.pred (
@@ -298,6 +277,34 @@ Proof.
   eexists. split; reflexivity.
 Qed.
 
+Lemma invert_typing_abs : forall Gamma T1 t T,
+  typing_vl Gamma <{ \:T1,t }> = return T ->
+  exists T2, (
+    typing (T1 :: Gamma) t = return T2 /\
+    T = <{{ T1 -> T2 }}>
+  ).
+Proof.
+  intros Gamma T1 t T H.
+  simpl in H.
+  destruct (typing (T1 :: Gamma) t) as [T2|] eqn:Eq; try discriminate.
+  inversion H; subst.
+  eexists; eauto.
+Qed.
+
+Lemma invert_typing_tyabs : forall Gamma t T,
+  typing_vl Gamma <{ \\, t }> = return T ->
+  exists T1, (
+    typing (map (ren_ty S) Gamma) t = return T1 /\
+    T = <{{ -/, T1 }}>
+  ).
+Proof.
+  intros Gamma t T H.
+  simpl in H.
+  destruct (typing (map (ren_ty S) Gamma) t) as [T1|] eqn:Eq; try discriminate.
+  inversion H; subst.
+  eexists; eauto.
+Qed.
+
 Lemma weaking_var :
   (
     forall t Gamma T,
@@ -327,13 +334,7 @@ Proof.
     rewrite IHt with (T:=<{{ -/, T1 }}>) (Gamma:=Gamma); try assumption.
     replace (ren_ty id t0) with t0 by (symmetry; apply rinstId'_ty).
     f_equal. symmetry. assumption.
-  - destruct v; simpl; simpl in H; simpl in H0.
-    + apply H1. assumption.
-    + replace (ren_ty id t) with t by (symmetry; apply rinstId'_ty).
-      simpl. replace (ren_ty id t) with t in H by (symmetry; apply rinstId'_ty) .
-      apply H with (Gamma:=Gamma); assumption.
-    + apply H with (Gamma:=Gamma); assumption.
-    + assumption.
+  - simpl. simpl in H0. apply H with (Gamma:=Gamma); assumption.
   - simpl in *. apply H0. assumption.
   - simpl in *.
     replace (ren_ty id t) with t by (symmetry; apply rinstId'_ty).
@@ -344,14 +345,14 @@ Proof.
     ).
     { replace (upRen_vl_ty id) with (@id nat) by (unfold upRen_vl_ty; reflexivity).
       apply H with (Gamma:=(t::Gamma)); try assumption. 
-      intros. destruct x0; simpl in *.
+      intros. destruct x; simpl in *.
       - assumption.
       - apply H1. assumption. }
     rewrite Ht. reflexivity.
   - simpl in *.
     replace (upRen_ty_ty id) with (@id nat) by
     ( unfold upRen_ty_ty; unfold unscoped.up_ren;
-      apply functional_extensionality; destruct x0; reflexivity).
+      apply functional_extensionality; destruct x; reflexivity).
     destruct (typing (map (ren_ty S) Gamma) t) eqn: Tyt; try discriminate.
     inversion H0.
     assert (Ht:
@@ -360,7 +361,7 @@ Proof.
     { apply H with (map (ren_ty S) Gamma); try assumption.
       intros. unfold upRen_ty_vl.
       rewrite nth_error_map in *.
-      destruct (nth_error Gamma x0) eqn: NthG.
+      destruct (nth_error Gamma x) eqn: NthG.
       - rewrite H1 with (U:=t1); assumption.
       - discriminate H2. }
     rewrite Ht. reflexivity.
@@ -373,22 +374,6 @@ Proof.
   intros T. unfold sigma_ty_empty. symmetry. apply idSubst_ty.
   reflexivity.
 Qed.
-
-Lemma typingbeta_ren_commutable : forall T U xi,
-  typing_beta_red (ren_ty (upRen_ty_ty xi) T) (ren_ty xi U) =
-  ren_ty xi (typing_beta_red T U).
-Proof.
-  induction T; intros;
-  unfold typing_beta_red, sigma_ty_one in *.
-  - simpl in *. destruct n as [|n'] eqn: Eqn'.
-    + simpl. repeat rewrite (renRen_ty S pred).
-      unfold core.funcomp. simpl. repeat rewrite rinstId'_ty.
-      reflexivity.
-    + reflexivity.
-  - simpl in *. rewrite IHT1. rewrite IHT2. reflexivity.
-  - simpl. Search up_ty_ty. admit.
-  - reflexivity.
-Admitted.  
 
 Lemma weaking_tyvar :
   (
@@ -416,13 +401,31 @@ Proof.
   - apply invert_typing_tyapp in H0 as [T1 [Tyt EqT] ].
     rewrite H with (Gamma:=Gamma) (T:=<{{ -/, T1}}>); try assumption.
     cbn [ren_ty]. subst T.
-    
-    rewrite typingbeta_ren_commutable.
-    reflexivity.
-  - 
-  
-Admitted.
-  
+    asolve. f_equal. apply ext_ty. intros.
+    asolve. destruct x; asolve.
+  - apply H with (Gamma:=Gamma); assumption.
+  - cbv [id]. apply H0. assumption.
+  - simpl in H0.
+    destruct (typing (t :: Gamma) t0) eqn: Tyt; try discriminate.
+    inversion H0.
+    replace (upRen_vl_vl id) with (@id nat);
+    try (apply functional_extensionality; intro x; destruct x; reflexivity).
+    rewrite H with (Gamma:=(t::Gamma)) (T:=t1); try assumption.
+    + asimpl. reflexivity.
+    + asimpl. intros. destruct x; simpl; simpl in H2.
+      * inversion H2. reflexivity.
+      * apply H1. assumption.
+  - simpl in H0.
+    destruct (typing (map (ren_ty S) Gamma) t) as [T1|] eqn: Tyt; try discriminate.
+    rewrite H with (Gamma:=map (ren_ty S) Gamma) (T:=T1); try assumption.
+    + inversion H0. reflexivity.
+    + asimpl. unfold unscoped.scons, core.funcomp.
+      intros. rewrite nth_error_map in *. 
+      destruct (nth_error Gamma x) as [V|] eqn: HG; try discriminate.
+      simpl in H2. inversion H2. apply H1 in HG.
+      rewrite HG. asolve. 
+  - simpl in H. inversion H. reflexivity.
+Qed.
 
 Lemma context_shift : forall Gamma x sigma T,
   typing_vl Gamma (sigma x) = return T ->
@@ -486,7 +489,7 @@ Proof.
     + rewrite instId'_ty. reflexivity.
     + assumption.
     + intros. rewrite instId'_ty.
-      destruct x0 as [|x0']; simpl; simpl in H2.
+      destruct x as [|x']; simpl; simpl in H2.
       * assumption.
       * unfold core.funcomp, unscoped.shift, unscoped.id.
         apply weaking_var with (Gamma:=Delta); auto.
@@ -497,10 +500,10 @@ Proof.
     assert (subst_tm (up_ty_ty (fun x0 : nat => id x0)) (up_ty_vl sigma) t
     = subst_tm (fun x : nat =>  x) (up_ty_vl sigma) t).
     { apply ext_tm; try reflexivity.
-      intros. destruct x0; reflexivity. }
+      intros. destruct x; reflexivity. }
     rewrite H2. rewrite (H _ _ E1); try reflexivity.
     intros. rewrite nth_error_map in H3.
-    destruct (nth_error Gamma x0) as [U' |] eqn: EqU'; try discriminate.
+    destruct (nth_error Gamma x) as [U' |] eqn: EqU'; try discriminate.
     simpl in H3. inversion H3. subst U. apply H1 in EqU'.
     apply context_shift. assumption.
   - (* TmUnit *)
@@ -508,92 +511,66 @@ Proof.
     inversion H; subst; reflexivity.
 Qed.
 
-
-
-
-Theorem var_subst_preserves_typing :
+Lemma tyvar_subst_preserves_typing :
   (
-    forall t Gamma s T S,
-    typing (S :: Gamma) t = return T ->
-    typing_vl Gamma s = return S ->
-    typing Gamma (beta_red t s) = return T
+    forall t Gamma T,
+    typing Gamma t = Some T ->
+    forall Delta sigma,
+    (forall x U, nth_error Gamma x = Some U ->
+    nth_error Delta x = Some (subst_ty sigma U)) ->
+    typing Delta (subst_tm sigma id t) = Some (subst_ty sigma T)
   ) /\ (
-    forall v Gamma s T S,
-      typing_vl (S :: Gamma) v = return T ->
-      typing_vl Gamma s = return S ->
-      typing Gamma (beta_red (TmVal v) s) = return T
+    forall v Gamma T,
+    typing_vl Gamma v = Some T ->
+    forall Delta sigma,
+    (forall x U, nth_error Gamma x = Some U ->
+    nth_error Delta x = Some (subst_ty sigma U)) ->
+    typing Delta (subst_tm sigma id (TmVal v)) = Some (subst_ty sigma T)
   ).
 Proof.
   apply tm_vl_mut_ind; intros.
-  - simpl; unfold beta_red in *.
-    rename H into IHt1. rename H0 into IHt2.
-    apply invert_typing_app in H1 as [T1 [Ht1 Ht2] ].
-    rewrite IHt1 with (T:=<{{T1->T}}>) (S:=S); try assumption.
-    rewrite IHt2 with (T:=T1) (S:=S); try assumption.
-    rewrite ty_beq_refl. reflexivity.
-  - simpl; unfold beta_red in *. rename H into IH.
-    apply invert_typing_tyapp in H0 as [T1 [Ht HT] ].
-    rewrite IH with (T:=<{{-/,T1}}>) (S:=S); try assumption.
-    replace (subst_ty sigma_ty_empty t0) with t0.
-    + subst T. rewrite rinstId'_ty. reflexivity.
-    + apply sigma_ty_empty_stable.
-  - simpl; unfold beta_red in *. rename H into IH.
-    simpl in IH. rewrite IH with (T:=T) (S:=S); auto.
-  - simpl; unfold beta_red in *. unfold sigma_tm_one.
-    destruct n as [|n'] eqn: Eqn; simpl; simpl in H0.
-    + rewrite renRen_vl. unfold core.funcomp, id.
-      simpl. rewrite rinstId'_vl.
-      simpl in H. rewrite H0. assumption.
-    + simpl in H. assumption.
-  - simpl. simpl in H0. rewrite instId'_ty. rewrite rinstId'_ty.
-    destruct (typing (t::S::Gamma) t0) as [T1|] eqn: Tyt0; try discriminate.
-    inversion H0. 
-    replace (upRen_vl_ty id) with (@id nat) by (unfold upRen_vl_ty; reflexivity).
-    replace (up_vl_ty sigma_ty_empty) with sigma_ty_empty by (unfold up_vl_ty; reflexivity).
-    unfold beta_red in H.
-    replace (upRen_vl_vl pred) with (@id nat).
-    + admit.
-    + apply functional_extensionality. intros.
-      unfold upRen_vl_vl, unscoped.up_ren, unscoped.scons. destruct x0.
+  - rename t into t1, t0 into t2, H into IH1, H0 into IH2.
+    simpl. apply invert_typing_app in H1 as [T11 [Ty1 Ty2] ].
+    rewrite IH1 with (Gamma:=Gamma) (T:=<{{T11->T}}>); try assumption.
+    rewrite IH2 with (Gamma:=Gamma) (T:=T11); try assumption.
+    simpl. rewrite ty_beq_refl. reflexivity.
+  - rename t0 into U.
+    simpl. apply invert_typing_tyapp in H0 as [T1 [Ht HT] ].
+    rewrite H with (Gamma:=Gamma) (T:=<{{-/,T1}}>); try assumption.
+    subst T. asimpl. aunfold.
+    f_equal. apply ext_ty. intros y.
+    destruct y; asimpl; aunfold; simpl.
+    + apply ext_ty. intros. rewrite renRen_ty.
+      unfold core.funcomp. simpl. rewrite rinstId'_ty. reflexivity.
+    + apply instId'_ty.
+  - apply H with (Gamma:=Gamma); try assumption.
+  - simpl. apply H0. apply H.
+  - simpl. rename t into T1.
+    replace (up_vl_vl (fun x0 : nat => id x0)) with (fun x : nat => (var_vl x));
+    try (apply functional_extensionality; destruct x; auto).
+    apply invert_typing_abs in H0 as [T2 [Ht HT] ].
+    rewrite H with (Gamma:=(T1::Gamma)) (T:=T2); try assumption.
+    + subst T. asimpl; aunfold.
+      replace (fun x0 : nat => ren_ty id (sigma x0)) with sigma.
       * reflexivity.
-      * simpl. unfold core.funcomp. 
-    unfold up_vl_vl, unscoped.scons, unscoped.var_zero,
-    unscoped.id, unscoped.shift, core.funcomp.
-    simpl in H. admit.
-  - simpl; unfold beta_red in *.
-    replace (upRen_ty_ty id) with (@id nat) by (apply functional_extensionality; intros; destruct x0; reflexivity).
-    replace (up_ty_ty sigma_ty_empty) with sigma_ty_empty by (apply functional_extensionality; intros; destruct x0; reflexivity).
-    simpl in H0.
-    destruct (typing (ren_ty Datatypes.S S :: map (ren_ty Datatypes.S) Gamma) t) as [T1|] eqn: Tyt1;
-    inversion H0.
-    apply H with (s:=s) in Tyt1.
-    + replace (upRen_ty_vl pred) with pred
-      by (apply functional_extensionality; intros; destruct x0; reflexivity).
-      replace (up_ty_vl (sigma_tm_one 0 (ren_vl id Datatypes.S s))) with (sigma_tm_one 0 (ren_vl id Datatypes.S s)).
-      rewrite Tyt1. reflexivity.
-      * admit.
-    + admit.
-    
-
-    rewrite weaking_var with (Gamma:=(S::t::Gamma)) (T:=T1).
+      * apply functional_extensionality. intros.
+        rewrite rinstId'_ty. reflexivity.
+    + intros. destruct x; simpl; simpl in H0.
+      * inversion H0. asimpl. aunfold.
+        asimpl. reflexivity.
+      * rewrite H1 with (U:=U); try assumption.
+        f_equal. apply ext_ty. intros.
+        destruct x0; asimpl; reflexivity. 
+  - simpl. apply invert_typing_tyabs in H0 as [T1 [Ht HT] ].
+    subst T. erewrite H; try apply Ht.
     + reflexivity.
-    + admit.
-    + intros. destruct x0 as [|x0'].
-      * simpl; simpl in H2.  assumption.
-      * simpl. simpl in H2.  destruct x0'.
-        { simpl in H2. simpl. admit.    }
-        { simpl in H2. simpl. assumption. }
-    
-    Search subst_tm.
-    + simpl in IH.
-      rewrite IH with (T:=T) (S:=S); auto.
-    + simpl in IH.
-      rewrite IH with (T:=T) (S:=S); auto.
-    + assumption.
-  - 
-   
-Admitted.
-
+    + intros. rewrite nth_error_map in *.
+      destruct (nth_error Gamma x) as [V|] eqn: HG; try discriminate.
+      rewrite H1 with (U:=V); try assumption.
+      simpl. f_equal. simpl in H0. inversion H0.
+      asimpl. aunfold. reflexivity.
+  - simpl in *. inversion H. reflexivity.
+Qed.  
 
 Theorem Preservation : forall Gamma t t' T,
   typing Gamma t = Some T ->
@@ -625,7 +602,12 @@ Proof.
         inversion Heval. simpl in Hty2.
         simpl in Hty1. destruct (typing (t :: Gamma) t0) eqn: Tyt0;
         try discriminate. inversion Hty1. subst t t2.
-        apply var_subst_preserves_typing with T1; assumption.
+        specialize var_subst_preserves_typing as [X _].
+        unfold beta_red. asimpl.
+        unfold core.funcomp. 
+        apply X with (Gamma:=(T1::Gamma)); try assumption.
+        intros. destruct x; asimpl; try assumption.
+        simpl in H. inversion H. subst T1. assumption.
   - rename t into t1.
     apply invert_typing_tyapp in Hty as [T1 [Hty HT] ].
     simpl in Heval.
@@ -638,7 +620,17 @@ Proof.
       ).
       simpl in evt1'. discriminate.
     + destruct t1 eqn: Eqt1; try destruct v; try discriminate.
-      admit.
-  - discriminate.
-Admitted.
-
+      simpl in Hty.
+      destruct (typing (map (ren_ty S) Gamma) t) as [T1'| ] eqn: Ht ; try discriminate.
+      inversion Hty. subst T1'. inversion Heval.
+      unfold ty_beta_red. rename t0 into T0.
+      rewrite HT.
+      asimpl. unfold core.funcomp.
+      specialize tyvar_subst_preserves_typing as [X _].
+      apply X with (Gamma:=(map (ren_ty S) Gamma)) ; try assumption.
+      intros. rewrite nth_error_map in H.
+      destruct (nth_error Gamma x) as [V|]; try discriminate.
+      simpl in H. inversion H. asimpl. unfold core.funcomp, sigma_ty_one.
+      simpl. f_equal. symmetry. apply instId'_ty.
+  - simpl in Heval. discriminate.
+Qed.
