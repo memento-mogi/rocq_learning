@@ -396,14 +396,12 @@ exact (fun x => eq_refl).
 Qed.
 
 Inductive tm : Type :=
+  | var_tm : nat -> tm
   | TmApp : tm -> tm -> tm
   | TmTApp : tm -> ty -> tm
-  | TmVal : vl -> tm
-with vl : Type :=
-  | var_vl : nat -> vl
-  | TmAbs : ty -> tm -> vl
-  | TmTAbs : tm -> vl
-  | TmUnit : vl.
+  | TmAbs : ty -> tm -> tm
+  | TmTAbs : tm -> tm
+  | TmUnit : tm.
 
 Lemma congr_TmApp {s0 : tm} {s1 : tm} {t0 : tm} {t1 : tm} (H0 : s0 = t0)
   (H1 : s1 = t1) : TmApp s0 s1 = TmApp t0 t1.
@@ -417,11 +415,6 @@ Lemma congr_TmTApp {s0 : tm} {s1 : ty} {t0 : tm} {t1 : ty} (H0 : s0 = t0)
 Proof.
 exact (eq_trans (eq_trans eq_refl (ap (fun x => TmTApp x s1) H0))
          (ap (fun x => TmTApp t0 x) H1)).
-Qed.
-
-Lemma congr_TmVal {s0 : vl} {t0 : vl} (H0 : s0 = t0) : TmVal s0 = TmVal t0.
-Proof.
-exact (eq_trans eq_refl (ap (fun x => TmVal x) H0)).
 Qed.
 
 Lemma congr_TmAbs {s0 : ty} {s1 : tm} {t0 : ty} {t1 : tm} (H0 : s0 = t0)
@@ -441,145 +434,127 @@ Proof.
 exact (eq_refl).
 Qed.
 
-Lemma upRen_ty_vl (xi : nat -> nat) : nat -> nat.
+Lemma upRen_ty_tm (xi : nat -> nat) : nat -> nat.
 Proof.
 exact (xi).
 Defined.
 
-Lemma upRen_vl_ty (xi : nat -> nat) : nat -> nat.
+Lemma upRen_tm_ty (xi : nat -> nat) : nat -> nat.
 Proof.
 exact (xi).
 Defined.
 
-Lemma upRen_vl_vl (xi : nat -> nat) : nat -> nat.
+Lemma upRen_tm_tm (xi : nat -> nat) : nat -> nat.
 Proof.
 exact (up_ren xi).
 Defined.
 
-Fixpoint ren_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat) (s : tm) {struct s}
+Fixpoint ren_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat) (s : tm) {struct s}
    :
 tm :=
   match s with
-  | TmApp s0 s1 => TmApp (ren_tm xi_ty xi_vl s0) (ren_tm xi_ty xi_vl s1)
-  | TmTApp s0 s1 => TmTApp (ren_tm xi_ty xi_vl s0) (ren_ty xi_ty s1)
-  | TmVal s0 => TmVal (ren_vl xi_ty xi_vl s0)
-  end
-with ren_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat) (s : vl) {struct s} :
-vl :=
-  match s with
-  | var_vl s0 => var_vl (xi_vl s0)
+  | var_tm s0 => var_tm (xi_tm s0)
+  | TmApp s0 s1 => TmApp (ren_tm xi_ty xi_tm s0) (ren_tm xi_ty xi_tm s1)
+  | TmTApp s0 s1 => TmTApp (ren_tm xi_ty xi_tm s0) (ren_ty xi_ty s1)
   | TmAbs s0 s1 =>
       TmAbs (ren_ty xi_ty s0)
-        (ren_tm (upRen_vl_ty xi_ty) (upRen_vl_vl xi_vl) s1)
-  | TmTAbs s0 => TmTAbs (ren_tm (upRen_ty_ty xi_ty) (upRen_ty_vl xi_vl) s0)
+        (ren_tm (upRen_tm_ty xi_ty) (upRen_tm_tm xi_tm) s1)
+  | TmTAbs s0 => TmTAbs (ren_tm (upRen_ty_ty xi_ty) (upRen_ty_tm xi_tm) s0)
   | TmUnit => TmUnit
   end.
 
-Lemma up_ty_vl (sigma : nat -> vl) : nat -> vl.
+Lemma up_ty_tm (sigma : nat -> tm) : nat -> tm.
 Proof.
-exact (funcomp (ren_vl shift id) sigma).
+exact (funcomp (ren_tm shift id) sigma).
 Defined.
 
-Lemma up_vl_ty (sigma : nat -> ty) : nat -> ty.
+Lemma up_tm_ty (sigma : nat -> ty) : nat -> ty.
 Proof.
 exact (funcomp (ren_ty id) sigma).
 Defined.
 
-Lemma up_vl_vl (sigma : nat -> vl) : nat -> vl.
+Lemma up_tm_tm (sigma : nat -> tm) : nat -> tm.
 Proof.
-exact (scons (var_vl var_zero) (funcomp (ren_vl id shift) sigma)).
+exact (scons (var_tm var_zero) (funcomp (ren_tm id shift) sigma)).
 Defined.
 
-Fixpoint subst_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl) (s : tm)
+Fixpoint subst_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm) (s : tm)
 {struct s} : tm :=
   match s with
+  | var_tm s0 => sigma_tm s0
   | TmApp s0 s1 =>
-      TmApp (subst_tm sigma_ty sigma_vl s0) (subst_tm sigma_ty sigma_vl s1)
+      TmApp (subst_tm sigma_ty sigma_tm s0) (subst_tm sigma_ty sigma_tm s1)
   | TmTApp s0 s1 =>
-      TmTApp (subst_tm sigma_ty sigma_vl s0) (subst_ty sigma_ty s1)
-  | TmVal s0 => TmVal (subst_vl sigma_ty sigma_vl s0)
-  end
-with subst_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl) (s : vl) {struct
- s} :
-vl :=
-  match s with
-  | var_vl s0 => sigma_vl s0
+      TmTApp (subst_tm sigma_ty sigma_tm s0) (subst_ty sigma_ty s1)
   | TmAbs s0 s1 =>
       TmAbs (subst_ty sigma_ty s0)
-        (subst_tm (up_vl_ty sigma_ty) (up_vl_vl sigma_vl) s1)
-  | TmTAbs s0 => TmTAbs (subst_tm (up_ty_ty sigma_ty) (up_ty_vl sigma_vl) s0)
+        (subst_tm (up_tm_ty sigma_ty) (up_tm_tm sigma_tm) s1)
+  | TmTAbs s0 => TmTAbs (subst_tm (up_ty_ty sigma_ty) (up_ty_tm sigma_tm) s0)
   | TmUnit => TmUnit
   end.
 
-Lemma upId_ty_vl (sigma : nat -> vl) (Eq : forall x, sigma x = var_vl x) :
-  forall x, up_ty_vl sigma x = var_vl x.
+Lemma upId_ty_tm (sigma : nat -> tm) (Eq : forall x, sigma x = var_tm x) :
+  forall x, up_ty_tm sigma x = var_tm x.
 Proof.
-exact (fun n => ap (ren_vl shift id) (Eq n)).
+exact (fun n => ap (ren_tm shift id) (Eq n)).
 Qed.
 
-Lemma upId_vl_ty (sigma : nat -> ty) (Eq : forall x, sigma x = var_ty x) :
-  forall x, up_vl_ty sigma x = var_ty x.
+Lemma upId_tm_ty (sigma : nat -> ty) (Eq : forall x, sigma x = var_ty x) :
+  forall x, up_tm_ty sigma x = var_ty x.
 Proof.
 exact (fun n => ap (ren_ty id) (Eq n)).
 Qed.
 
-Lemma upId_vl_vl (sigma : nat -> vl) (Eq : forall x, sigma x = var_vl x) :
-  forall x, up_vl_vl sigma x = var_vl x.
+Lemma upId_tm_tm (sigma : nat -> tm) (Eq : forall x, sigma x = var_tm x) :
+  forall x, up_tm_tm sigma x = var_tm x.
 Proof.
 exact (fun n =>
        match n with
-       | S n' => ap (ren_vl id shift) (Eq n')
+       | S n' => ap (ren_tm id shift) (Eq n')
        | O => eq_refl
        end).
 Qed.
 
-Fixpoint idSubst_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
+Fixpoint idSubst_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
 (Eq_ty : forall x, sigma_ty x = var_ty x)
-(Eq_vl : forall x, sigma_vl x = var_vl x) (s : tm) {struct s} :
-subst_tm sigma_ty sigma_vl s = s :=
+(Eq_tm : forall x, sigma_tm x = var_tm x) (s : tm) {struct s} :
+subst_tm sigma_ty sigma_tm s = s :=
   match s with
+  | var_tm s0 => Eq_tm s0
   | TmApp s0 s1 =>
-      congr_TmApp (idSubst_tm sigma_ty sigma_vl Eq_ty Eq_vl s0)
-        (idSubst_tm sigma_ty sigma_vl Eq_ty Eq_vl s1)
+      congr_TmApp (idSubst_tm sigma_ty sigma_tm Eq_ty Eq_tm s0)
+        (idSubst_tm sigma_ty sigma_tm Eq_ty Eq_tm s1)
   | TmTApp s0 s1 =>
-      congr_TmTApp (idSubst_tm sigma_ty sigma_vl Eq_ty Eq_vl s0)
+      congr_TmTApp (idSubst_tm sigma_ty sigma_tm Eq_ty Eq_tm s0)
         (idSubst_ty sigma_ty Eq_ty s1)
-  | TmVal s0 => congr_TmVal (idSubst_vl sigma_ty sigma_vl Eq_ty Eq_vl s0)
-  end
-with idSubst_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(Eq_ty : forall x, sigma_ty x = var_ty x)
-(Eq_vl : forall x, sigma_vl x = var_vl x) (s : vl) {struct s} :
-subst_vl sigma_ty sigma_vl s = s :=
-  match s with
-  | var_vl s0 => Eq_vl s0
   | TmAbs s0 s1 =>
       congr_TmAbs (idSubst_ty sigma_ty Eq_ty s0)
-        (idSubst_tm (up_vl_ty sigma_ty) (up_vl_vl sigma_vl)
-           (upId_vl_ty _ Eq_ty) (upId_vl_vl _ Eq_vl) s1)
+        (idSubst_tm (up_tm_ty sigma_ty) (up_tm_tm sigma_tm)
+           (upId_tm_ty _ Eq_ty) (upId_tm_tm _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (idSubst_tm (up_ty_ty sigma_ty) (up_ty_vl sigma_vl)
-           (upId_ty_ty _ Eq_ty) (upId_ty_vl _ Eq_vl) s0)
+        (idSubst_tm (up_ty_ty sigma_ty) (up_ty_tm sigma_tm)
+           (upId_ty_ty _ Eq_ty) (upId_ty_tm _ Eq_tm) s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma upExtRen_ty_vl (xi : nat -> nat) (zeta : nat -> nat)
+Lemma upExtRen_ty_tm (xi : nat -> nat) (zeta : nat -> nat)
   (Eq : forall x, xi x = zeta x) :
-  forall x, upRen_ty_vl xi x = upRen_ty_vl zeta x.
+  forall x, upRen_ty_tm xi x = upRen_ty_tm zeta x.
 Proof.
 exact (fun n => Eq n).
 Qed.
 
-Lemma upExtRen_vl_ty (xi : nat -> nat) (zeta : nat -> nat)
+Lemma upExtRen_tm_ty (xi : nat -> nat) (zeta : nat -> nat)
   (Eq : forall x, xi x = zeta x) :
-  forall x, upRen_vl_ty xi x = upRen_vl_ty zeta x.
+  forall x, upRen_tm_ty xi x = upRen_tm_ty zeta x.
 Proof.
 exact (fun n => Eq n).
 Qed.
 
-Lemma upExtRen_vl_vl (xi : nat -> nat) (zeta : nat -> nat)
+Lemma upExtRen_tm_tm (xi : nat -> nat) (zeta : nat -> nat)
   (Eq : forall x, xi x = zeta x) :
-  forall x, upRen_vl_vl xi x = upRen_vl_vl zeta x.
+  forall x, upRen_tm_tm xi x = upRen_tm_tm zeta x.
 Proof.
 exact (fun n => match n with
                 | S n' => ap shift (Eq n')
@@ -587,268 +562,226 @@ exact (fun n => match n with
                 end).
 Qed.
 
-Fixpoint extRen_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(zeta_ty : nat -> nat) (zeta_vl : nat -> nat)
+Fixpoint extRen_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+(zeta_ty : nat -> nat) (zeta_tm : nat -> nat)
 (Eq_ty : forall x, xi_ty x = zeta_ty x)
-(Eq_vl : forall x, xi_vl x = zeta_vl x) (s : tm) {struct s} :
-ren_tm xi_ty xi_vl s = ren_tm zeta_ty zeta_vl s :=
+(Eq_tm : forall x, xi_tm x = zeta_tm x) (s : tm) {struct s} :
+ren_tm xi_ty xi_tm s = ren_tm zeta_ty zeta_tm s :=
   match s with
+  | var_tm s0 => ap (var_tm) (Eq_tm s0)
   | TmApp s0 s1 =>
-      congr_TmApp (extRen_tm xi_ty xi_vl zeta_ty zeta_vl Eq_ty Eq_vl s0)
-        (extRen_tm xi_ty xi_vl zeta_ty zeta_vl Eq_ty Eq_vl s1)
+      congr_TmApp (extRen_tm xi_ty xi_tm zeta_ty zeta_tm Eq_ty Eq_tm s0)
+        (extRen_tm xi_ty xi_tm zeta_ty zeta_tm Eq_ty Eq_tm s1)
   | TmTApp s0 s1 =>
-      congr_TmTApp (extRen_tm xi_ty xi_vl zeta_ty zeta_vl Eq_ty Eq_vl s0)
+      congr_TmTApp (extRen_tm xi_ty xi_tm zeta_ty zeta_tm Eq_ty Eq_tm s0)
         (extRen_ty xi_ty zeta_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal (extRen_vl xi_ty xi_vl zeta_ty zeta_vl Eq_ty Eq_vl s0)
-  end
-with extRen_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(zeta_ty : nat -> nat) (zeta_vl : nat -> nat)
-(Eq_ty : forall x, xi_ty x = zeta_ty x)
-(Eq_vl : forall x, xi_vl x = zeta_vl x) (s : vl) {struct s} :
-ren_vl xi_ty xi_vl s = ren_vl zeta_ty zeta_vl s :=
-  match s with
-  | var_vl s0 => ap (var_vl) (Eq_vl s0)
   | TmAbs s0 s1 =>
       congr_TmAbs (extRen_ty xi_ty zeta_ty Eq_ty s0)
-        (extRen_tm (upRen_vl_ty xi_ty) (upRen_vl_vl xi_vl)
-           (upRen_vl_ty zeta_ty) (upRen_vl_vl zeta_vl)
-           (upExtRen_vl_ty _ _ Eq_ty) (upExtRen_vl_vl _ _ Eq_vl) s1)
+        (extRen_tm (upRen_tm_ty xi_ty) (upRen_tm_tm xi_tm)
+           (upRen_tm_ty zeta_ty) (upRen_tm_tm zeta_tm)
+           (upExtRen_tm_ty _ _ Eq_ty) (upExtRen_tm_tm _ _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (extRen_tm (upRen_ty_ty xi_ty) (upRen_ty_vl xi_vl)
-           (upRen_ty_ty zeta_ty) (upRen_ty_vl zeta_vl)
-           (upExtRen_ty_ty _ _ Eq_ty) (upExtRen_ty_vl _ _ Eq_vl) s0)
+        (extRen_tm (upRen_ty_ty xi_ty) (upRen_ty_tm xi_tm)
+           (upRen_ty_ty zeta_ty) (upRen_ty_tm zeta_tm)
+           (upExtRen_ty_ty _ _ Eq_ty) (upExtRen_ty_tm _ _ Eq_tm) s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma upExt_ty_vl (sigma : nat -> vl) (tau : nat -> vl)
+Lemma upExt_ty_tm (sigma : nat -> tm) (tau : nat -> tm)
   (Eq : forall x, sigma x = tau x) :
-  forall x, up_ty_vl sigma x = up_ty_vl tau x.
+  forall x, up_ty_tm sigma x = up_ty_tm tau x.
 Proof.
-exact (fun n => ap (ren_vl shift id) (Eq n)).
+exact (fun n => ap (ren_tm shift id) (Eq n)).
 Qed.
 
-Lemma upExt_vl_ty (sigma : nat -> ty) (tau : nat -> ty)
+Lemma upExt_tm_ty (sigma : nat -> ty) (tau : nat -> ty)
   (Eq : forall x, sigma x = tau x) :
-  forall x, up_vl_ty sigma x = up_vl_ty tau x.
+  forall x, up_tm_ty sigma x = up_tm_ty tau x.
 Proof.
 exact (fun n => ap (ren_ty id) (Eq n)).
 Qed.
 
-Lemma upExt_vl_vl (sigma : nat -> vl) (tau : nat -> vl)
+Lemma upExt_tm_tm (sigma : nat -> tm) (tau : nat -> tm)
   (Eq : forall x, sigma x = tau x) :
-  forall x, up_vl_vl sigma x = up_vl_vl tau x.
+  forall x, up_tm_tm sigma x = up_tm_tm tau x.
 Proof.
 exact (fun n =>
        match n with
-       | S n' => ap (ren_vl id shift) (Eq n')
+       | S n' => ap (ren_tm id shift) (Eq n')
        | O => eq_refl
        end).
 Qed.
 
-Fixpoint ext_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(tau_ty : nat -> ty) (tau_vl : nat -> vl)
+Fixpoint ext_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+(tau_ty : nat -> ty) (tau_tm : nat -> tm)
 (Eq_ty : forall x, sigma_ty x = tau_ty x)
-(Eq_vl : forall x, sigma_vl x = tau_vl x) (s : tm) {struct s} :
-subst_tm sigma_ty sigma_vl s = subst_tm tau_ty tau_vl s :=
+(Eq_tm : forall x, sigma_tm x = tau_tm x) (s : tm) {struct s} :
+subst_tm sigma_ty sigma_tm s = subst_tm tau_ty tau_tm s :=
   match s with
+  | var_tm s0 => Eq_tm s0
   | TmApp s0 s1 =>
-      congr_TmApp (ext_tm sigma_ty sigma_vl tau_ty tau_vl Eq_ty Eq_vl s0)
-        (ext_tm sigma_ty sigma_vl tau_ty tau_vl Eq_ty Eq_vl s1)
+      congr_TmApp (ext_tm sigma_ty sigma_tm tau_ty tau_tm Eq_ty Eq_tm s0)
+        (ext_tm sigma_ty sigma_tm tau_ty tau_tm Eq_ty Eq_tm s1)
   | TmTApp s0 s1 =>
-      congr_TmTApp (ext_tm sigma_ty sigma_vl tau_ty tau_vl Eq_ty Eq_vl s0)
+      congr_TmTApp (ext_tm sigma_ty sigma_tm tau_ty tau_tm Eq_ty Eq_tm s0)
         (ext_ty sigma_ty tau_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal (ext_vl sigma_ty sigma_vl tau_ty tau_vl Eq_ty Eq_vl s0)
-  end
-with ext_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(tau_ty : nat -> ty) (tau_vl : nat -> vl)
-(Eq_ty : forall x, sigma_ty x = tau_ty x)
-(Eq_vl : forall x, sigma_vl x = tau_vl x) (s : vl) {struct s} :
-subst_vl sigma_ty sigma_vl s = subst_vl tau_ty tau_vl s :=
-  match s with
-  | var_vl s0 => Eq_vl s0
   | TmAbs s0 s1 =>
       congr_TmAbs (ext_ty sigma_ty tau_ty Eq_ty s0)
-        (ext_tm (up_vl_ty sigma_ty) (up_vl_vl sigma_vl) (up_vl_ty tau_ty)
-           (up_vl_vl tau_vl) (upExt_vl_ty _ _ Eq_ty) (upExt_vl_vl _ _ Eq_vl)
+        (ext_tm (up_tm_ty sigma_ty) (up_tm_tm sigma_tm) (up_tm_ty tau_ty)
+           (up_tm_tm tau_tm) (upExt_tm_ty _ _ Eq_ty) (upExt_tm_tm _ _ Eq_tm)
            s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (ext_tm (up_ty_ty sigma_ty) (up_ty_vl sigma_vl) (up_ty_ty tau_ty)
-           (up_ty_vl tau_vl) (upExt_ty_ty _ _ Eq_ty) (upExt_ty_vl _ _ Eq_vl)
+        (ext_tm (up_ty_ty sigma_ty) (up_ty_tm sigma_tm) (up_ty_ty tau_ty)
+           (up_ty_tm tau_tm) (upExt_ty_ty _ _ Eq_ty) (upExt_ty_tm _ _ Eq_tm)
            s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma up_ren_ren_ty_vl (xi : nat -> nat) (zeta : nat -> nat)
+Lemma up_ren_ren_ty_tm (xi : nat -> nat) (zeta : nat -> nat)
   (rho : nat -> nat) (Eq : forall x, funcomp zeta xi x = rho x) :
-  forall x, funcomp (upRen_ty_vl zeta) (upRen_ty_vl xi) x = upRen_ty_vl rho x.
+  forall x, funcomp (upRen_ty_tm zeta) (upRen_ty_tm xi) x = upRen_ty_tm rho x.
 Proof.
 exact (Eq).
 Qed.
 
-Lemma up_ren_ren_vl_ty (xi : nat -> nat) (zeta : nat -> nat)
+Lemma up_ren_ren_tm_ty (xi : nat -> nat) (zeta : nat -> nat)
   (rho : nat -> nat) (Eq : forall x, funcomp zeta xi x = rho x) :
-  forall x, funcomp (upRen_vl_ty zeta) (upRen_vl_ty xi) x = upRen_vl_ty rho x.
+  forall x, funcomp (upRen_tm_ty zeta) (upRen_tm_ty xi) x = upRen_tm_ty rho x.
 Proof.
 exact (Eq).
 Qed.
 
-Lemma up_ren_ren_vl_vl (xi : nat -> nat) (zeta : nat -> nat)
+Lemma up_ren_ren_tm_tm (xi : nat -> nat) (zeta : nat -> nat)
   (rho : nat -> nat) (Eq : forall x, funcomp zeta xi x = rho x) :
-  forall x, funcomp (upRen_vl_vl zeta) (upRen_vl_vl xi) x = upRen_vl_vl rho x.
+  forall x, funcomp (upRen_tm_tm zeta) (upRen_tm_tm xi) x = upRen_tm_tm rho x.
 Proof.
 exact (up_ren_ren xi zeta rho Eq).
 Qed.
 
-Fixpoint compRenRen_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (rho_ty : nat -> nat)
-(rho_vl : nat -> nat) (Eq_ty : forall x, funcomp zeta_ty xi_ty x = rho_ty x)
-(Eq_vl : forall x, funcomp zeta_vl xi_vl x = rho_vl x) (s : tm) {struct s} :
-ren_tm zeta_ty zeta_vl (ren_tm xi_ty xi_vl s) = ren_tm rho_ty rho_vl s :=
+Fixpoint compRenRen_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+(zeta_ty : nat -> nat) (zeta_tm : nat -> nat) (rho_ty : nat -> nat)
+(rho_tm : nat -> nat) (Eq_ty : forall x, funcomp zeta_ty xi_ty x = rho_ty x)
+(Eq_tm : forall x, funcomp zeta_tm xi_tm x = rho_tm x) (s : tm) {struct s} :
+ren_tm zeta_ty zeta_tm (ren_tm xi_ty xi_tm s) = ren_tm rho_ty rho_tm s :=
   match s with
+  | var_tm s0 => ap (var_tm) (Eq_tm s0)
   | TmApp s0 s1 =>
       congr_TmApp
-        (compRenRen_tm xi_ty xi_vl zeta_ty zeta_vl rho_ty rho_vl Eq_ty Eq_vl
+        (compRenRen_tm xi_ty xi_tm zeta_ty zeta_tm rho_ty rho_tm Eq_ty Eq_tm
            s0)
-        (compRenRen_tm xi_ty xi_vl zeta_ty zeta_vl rho_ty rho_vl Eq_ty Eq_vl
+        (compRenRen_tm xi_ty xi_tm zeta_ty zeta_tm rho_ty rho_tm Eq_ty Eq_tm
            s1)
   | TmTApp s0 s1 =>
       congr_TmTApp
-        (compRenRen_tm xi_ty xi_vl zeta_ty zeta_vl rho_ty rho_vl Eq_ty Eq_vl
+        (compRenRen_tm xi_ty xi_tm zeta_ty zeta_tm rho_ty rho_tm Eq_ty Eq_tm
            s0)
         (compRenRen_ty xi_ty zeta_ty rho_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal
-        (compRenRen_vl xi_ty xi_vl zeta_ty zeta_vl rho_ty rho_vl Eq_ty Eq_vl
-           s0)
-  end
-with compRenRen_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (rho_ty : nat -> nat)
-(rho_vl : nat -> nat) (Eq_ty : forall x, funcomp zeta_ty xi_ty x = rho_ty x)
-(Eq_vl : forall x, funcomp zeta_vl xi_vl x = rho_vl x) (s : vl) {struct s} :
-ren_vl zeta_ty zeta_vl (ren_vl xi_ty xi_vl s) = ren_vl rho_ty rho_vl s :=
-  match s with
-  | var_vl s0 => ap (var_vl) (Eq_vl s0)
   | TmAbs s0 s1 =>
       congr_TmAbs (compRenRen_ty xi_ty zeta_ty rho_ty Eq_ty s0)
-        (compRenRen_tm (upRen_vl_ty xi_ty) (upRen_vl_vl xi_vl)
-           (upRen_vl_ty zeta_ty) (upRen_vl_vl zeta_vl) (upRen_vl_ty rho_ty)
-           (upRen_vl_vl rho_vl) Eq_ty (up_ren_ren _ _ _ Eq_vl) s1)
+        (compRenRen_tm (upRen_tm_ty xi_ty) (upRen_tm_tm xi_tm)
+           (upRen_tm_ty zeta_ty) (upRen_tm_tm zeta_tm) (upRen_tm_ty rho_ty)
+           (upRen_tm_tm rho_tm) Eq_ty (up_ren_ren _ _ _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (compRenRen_tm (upRen_ty_ty xi_ty) (upRen_ty_vl xi_vl)
-           (upRen_ty_ty zeta_ty) (upRen_ty_vl zeta_vl) (upRen_ty_ty rho_ty)
-           (upRen_ty_vl rho_vl) (up_ren_ren _ _ _ Eq_ty) Eq_vl s0)
+        (compRenRen_tm (upRen_ty_ty xi_ty) (upRen_ty_tm xi_tm)
+           (upRen_ty_ty zeta_ty) (upRen_ty_tm zeta_tm) (upRen_ty_ty rho_ty)
+           (upRen_ty_tm rho_tm) (up_ren_ren _ _ _ Eq_ty) Eq_tm s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma up_ren_subst_ty_vl (xi : nat -> nat) (tau : nat -> vl)
-  (theta : nat -> vl) (Eq : forall x, funcomp tau xi x = theta x) :
-  forall x, funcomp (up_ty_vl tau) (upRen_ty_vl xi) x = up_ty_vl theta x.
+Lemma up_ren_subst_ty_tm (xi : nat -> nat) (tau : nat -> tm)
+  (theta : nat -> tm) (Eq : forall x, funcomp tau xi x = theta x) :
+  forall x, funcomp (up_ty_tm tau) (upRen_ty_tm xi) x = up_ty_tm theta x.
 Proof.
-exact (fun n => ap (ren_vl shift id) (Eq n)).
+exact (fun n => ap (ren_tm shift id) (Eq n)).
 Qed.
 
-Lemma up_ren_subst_vl_ty (xi : nat -> nat) (tau : nat -> ty)
+Lemma up_ren_subst_tm_ty (xi : nat -> nat) (tau : nat -> ty)
   (theta : nat -> ty) (Eq : forall x, funcomp tau xi x = theta x) :
-  forall x, funcomp (up_vl_ty tau) (upRen_vl_ty xi) x = up_vl_ty theta x.
+  forall x, funcomp (up_tm_ty tau) (upRen_tm_ty xi) x = up_tm_ty theta x.
 Proof.
 exact (fun n => ap (ren_ty id) (Eq n)).
 Qed.
 
-Lemma up_ren_subst_vl_vl (xi : nat -> nat) (tau : nat -> vl)
-  (theta : nat -> vl) (Eq : forall x, funcomp tau xi x = theta x) :
-  forall x, funcomp (up_vl_vl tau) (upRen_vl_vl xi) x = up_vl_vl theta x.
+Lemma up_ren_subst_tm_tm (xi : nat -> nat) (tau : nat -> tm)
+  (theta : nat -> tm) (Eq : forall x, funcomp tau xi x = theta x) :
+  forall x, funcomp (up_tm_tm tau) (upRen_tm_tm xi) x = up_tm_tm theta x.
 Proof.
 exact (fun n =>
        match n with
-       | S n' => ap (ren_vl id shift) (Eq n')
+       | S n' => ap (ren_tm id shift) (Eq n')
        | O => eq_refl
        end).
 Qed.
 
-Fixpoint compRenSubst_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(tau_ty : nat -> ty) (tau_vl : nat -> vl) (theta_ty : nat -> ty)
-(theta_vl : nat -> vl)
+Fixpoint compRenSubst_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+(tau_ty : nat -> ty) (tau_tm : nat -> tm) (theta_ty : nat -> ty)
+(theta_tm : nat -> tm)
 (Eq_ty : forall x, funcomp tau_ty xi_ty x = theta_ty x)
-(Eq_vl : forall x, funcomp tau_vl xi_vl x = theta_vl x) (s : tm) {struct s} :
-subst_tm tau_ty tau_vl (ren_tm xi_ty xi_vl s) = subst_tm theta_ty theta_vl s
+(Eq_tm : forall x, funcomp tau_tm xi_tm x = theta_tm x) (s : tm) {struct s} :
+subst_tm tau_ty tau_tm (ren_tm xi_ty xi_tm s) = subst_tm theta_ty theta_tm s
 :=
   match s with
+  | var_tm s0 => Eq_tm s0
   | TmApp s0 s1 =>
       congr_TmApp
-        (compRenSubst_tm xi_ty xi_vl tau_ty tau_vl theta_ty theta_vl Eq_ty
-           Eq_vl s0)
-        (compRenSubst_tm xi_ty xi_vl tau_ty tau_vl theta_ty theta_vl Eq_ty
-           Eq_vl s1)
+        (compRenSubst_tm xi_ty xi_tm tau_ty tau_tm theta_ty theta_tm Eq_ty
+           Eq_tm s0)
+        (compRenSubst_tm xi_ty xi_tm tau_ty tau_tm theta_ty theta_tm Eq_ty
+           Eq_tm s1)
   | TmTApp s0 s1 =>
       congr_TmTApp
-        (compRenSubst_tm xi_ty xi_vl tau_ty tau_vl theta_ty theta_vl Eq_ty
-           Eq_vl s0)
+        (compRenSubst_tm xi_ty xi_tm tau_ty tau_tm theta_ty theta_tm Eq_ty
+           Eq_tm s0)
         (compRenSubst_ty xi_ty tau_ty theta_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal
-        (compRenSubst_vl xi_ty xi_vl tau_ty tau_vl theta_ty theta_vl Eq_ty
-           Eq_vl s0)
-  end
-with compRenSubst_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(tau_ty : nat -> ty) (tau_vl : nat -> vl) (theta_ty : nat -> ty)
-(theta_vl : nat -> vl)
-(Eq_ty : forall x, funcomp tau_ty xi_ty x = theta_ty x)
-(Eq_vl : forall x, funcomp tau_vl xi_vl x = theta_vl x) (s : vl) {struct s} :
-subst_vl tau_ty tau_vl (ren_vl xi_ty xi_vl s) = subst_vl theta_ty theta_vl s
-:=
-  match s with
-  | var_vl s0 => Eq_vl s0
   | TmAbs s0 s1 =>
       congr_TmAbs (compRenSubst_ty xi_ty tau_ty theta_ty Eq_ty s0)
-        (compRenSubst_tm (upRen_vl_ty xi_ty) (upRen_vl_vl xi_vl)
-           (up_vl_ty tau_ty) (up_vl_vl tau_vl) (up_vl_ty theta_ty)
-           (up_vl_vl theta_vl) (up_ren_subst_vl_ty _ _ _ Eq_ty)
-           (up_ren_subst_vl_vl _ _ _ Eq_vl) s1)
+        (compRenSubst_tm (upRen_tm_ty xi_ty) (upRen_tm_tm xi_tm)
+           (up_tm_ty tau_ty) (up_tm_tm tau_tm) (up_tm_ty theta_ty)
+           (up_tm_tm theta_tm) (up_ren_subst_tm_ty _ _ _ Eq_ty)
+           (up_ren_subst_tm_tm _ _ _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (compRenSubst_tm (upRen_ty_ty xi_ty) (upRen_ty_vl xi_vl)
-           (up_ty_ty tau_ty) (up_ty_vl tau_vl) (up_ty_ty theta_ty)
-           (up_ty_vl theta_vl) (up_ren_subst_ty_ty _ _ _ Eq_ty)
-           (up_ren_subst_ty_vl _ _ _ Eq_vl) s0)
+        (compRenSubst_tm (upRen_ty_ty xi_ty) (upRen_ty_tm xi_tm)
+           (up_ty_ty tau_ty) (up_ty_tm tau_tm) (up_ty_ty theta_ty)
+           (up_ty_tm theta_tm) (up_ren_subst_ty_ty _ _ _ Eq_ty)
+           (up_ren_subst_ty_tm _ _ _ Eq_tm) s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma up_subst_ren_ty_vl (sigma : nat -> vl) (zeta_ty : nat -> nat)
-  (zeta_vl : nat -> nat) (theta : nat -> vl)
-  (Eq : forall x, funcomp (ren_vl zeta_ty zeta_vl) sigma x = theta x) :
+Lemma up_subst_ren_ty_tm (sigma : nat -> tm) (zeta_ty : nat -> nat)
+  (zeta_tm : nat -> nat) (theta : nat -> tm)
+  (Eq : forall x, funcomp (ren_tm zeta_ty zeta_tm) sigma x = theta x) :
   forall x,
-  funcomp (ren_vl (upRen_ty_ty zeta_ty) (upRen_ty_vl zeta_vl))
-    (up_ty_vl sigma) x =
-  up_ty_vl theta x.
+  funcomp (ren_tm (upRen_ty_ty zeta_ty) (upRen_ty_tm zeta_tm))
+    (up_ty_tm sigma) x =
+  up_ty_tm theta x.
 Proof.
 exact (fun n =>
        eq_trans
-         (compRenRen_vl shift id (upRen_ty_ty zeta_ty) (upRen_ty_vl zeta_vl)
-            (funcomp shift zeta_ty) (funcomp id zeta_vl) (fun x => eq_refl)
+         (compRenRen_tm shift id (upRen_ty_ty zeta_ty) (upRen_ty_tm zeta_tm)
+            (funcomp shift zeta_ty) (funcomp id zeta_tm) (fun x => eq_refl)
             (fun x => eq_refl) (sigma n))
          (eq_trans
             (eq_sym
-               (compRenRen_vl zeta_ty zeta_vl shift id
-                  (funcomp shift zeta_ty) (funcomp id zeta_vl)
+               (compRenRen_tm zeta_ty zeta_tm shift id
+                  (funcomp shift zeta_ty) (funcomp id zeta_tm)
                   (fun x => eq_refl) (fun x => eq_refl) (sigma n)))
-            (ap (ren_vl shift id) (Eq n)))).
+            (ap (ren_tm shift id) (Eq n)))).
 Qed.
 
-Lemma up_subst_ren_vl_ty (sigma : nat -> ty) (zeta_ty : nat -> nat)
+Lemma up_subst_ren_tm_ty (sigma : nat -> ty) (zeta_ty : nat -> nat)
   (theta : nat -> ty)
   (Eq : forall x, funcomp (ren_ty zeta_ty) sigma x = theta x) :
   forall x,
-  funcomp (ren_ty (upRen_vl_ty zeta_ty)) (up_vl_ty sigma) x =
-  up_vl_ty theta x.
+  funcomp (ren_ty (upRen_tm_ty zeta_ty)) (up_tm_ty sigma) x =
+  up_tm_ty theta x.
 Proof.
 exact (fun n =>
        eq_trans
-         (compRenRen_ty id (upRen_vl_ty zeta_ty) (funcomp id zeta_ty)
+         (compRenRen_ty id (upRen_tm_ty zeta_ty) (funcomp id zeta_ty)
             (fun x => eq_refl) (sigma n))
          (eq_trans
             (eq_sym
@@ -857,112 +790,98 @@ exact (fun n =>
             (ap (ren_ty id) (Eq n)))).
 Qed.
 
-Lemma up_subst_ren_vl_vl (sigma : nat -> vl) (zeta_ty : nat -> nat)
-  (zeta_vl : nat -> nat) (theta : nat -> vl)
-  (Eq : forall x, funcomp (ren_vl zeta_ty zeta_vl) sigma x = theta x) :
+Lemma up_subst_ren_tm_tm (sigma : nat -> tm) (zeta_ty : nat -> nat)
+  (zeta_tm : nat -> nat) (theta : nat -> tm)
+  (Eq : forall x, funcomp (ren_tm zeta_ty zeta_tm) sigma x = theta x) :
   forall x,
-  funcomp (ren_vl (upRen_vl_ty zeta_ty) (upRen_vl_vl zeta_vl))
-    (up_vl_vl sigma) x =
-  up_vl_vl theta x.
+  funcomp (ren_tm (upRen_tm_ty zeta_ty) (upRen_tm_tm zeta_tm))
+    (up_tm_tm sigma) x =
+  up_tm_tm theta x.
 Proof.
 exact (fun n =>
        match n with
        | S n' =>
            eq_trans
-             (compRenRen_vl id shift (upRen_vl_ty zeta_ty)
-                (upRen_vl_vl zeta_vl) (funcomp id zeta_ty)
-                (funcomp shift zeta_vl) (fun x => eq_refl) (fun x => eq_refl)
+             (compRenRen_tm id shift (upRen_tm_ty zeta_ty)
+                (upRen_tm_tm zeta_tm) (funcomp id zeta_ty)
+                (funcomp shift zeta_tm) (fun x => eq_refl) (fun x => eq_refl)
                 (sigma n'))
              (eq_trans
                 (eq_sym
-                   (compRenRen_vl zeta_ty zeta_vl id shift
-                      (funcomp id zeta_ty) (funcomp shift zeta_vl)
+                   (compRenRen_tm zeta_ty zeta_tm id shift
+                      (funcomp id zeta_ty) (funcomp shift zeta_tm)
                       (fun x => eq_refl) (fun x => eq_refl) (sigma n')))
-                (ap (ren_vl id shift) (Eq n')))
+                (ap (ren_tm id shift) (Eq n')))
        | O => eq_refl
        end).
 Qed.
 
-Fixpoint compSubstRen_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (theta_ty : nat -> ty)
-(theta_vl : nat -> vl)
+Fixpoint compSubstRen_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+(zeta_ty : nat -> nat) (zeta_tm : nat -> nat) (theta_ty : nat -> ty)
+(theta_tm : nat -> tm)
 (Eq_ty : forall x, funcomp (ren_ty zeta_ty) sigma_ty x = theta_ty x)
-(Eq_vl : forall x, funcomp (ren_vl zeta_ty zeta_vl) sigma_vl x = theta_vl x)
+(Eq_tm : forall x, funcomp (ren_tm zeta_ty zeta_tm) sigma_tm x = theta_tm x)
 (s : tm) {struct s} :
-ren_tm zeta_ty zeta_vl (subst_tm sigma_ty sigma_vl s) =
-subst_tm theta_ty theta_vl s :=
+ren_tm zeta_ty zeta_tm (subst_tm sigma_ty sigma_tm s) =
+subst_tm theta_ty theta_tm s :=
   match s with
+  | var_tm s0 => Eq_tm s0
   | TmApp s0 s1 =>
       congr_TmApp
-        (compSubstRen_tm sigma_ty sigma_vl zeta_ty zeta_vl theta_ty theta_vl
-           Eq_ty Eq_vl s0)
-        (compSubstRen_tm sigma_ty sigma_vl zeta_ty zeta_vl theta_ty theta_vl
-           Eq_ty Eq_vl s1)
+        (compSubstRen_tm sigma_ty sigma_tm zeta_ty zeta_tm theta_ty theta_tm
+           Eq_ty Eq_tm s0)
+        (compSubstRen_tm sigma_ty sigma_tm zeta_ty zeta_tm theta_ty theta_tm
+           Eq_ty Eq_tm s1)
   | TmTApp s0 s1 =>
       congr_TmTApp
-        (compSubstRen_tm sigma_ty sigma_vl zeta_ty zeta_vl theta_ty theta_vl
-           Eq_ty Eq_vl s0)
+        (compSubstRen_tm sigma_ty sigma_tm zeta_ty zeta_tm theta_ty theta_tm
+           Eq_ty Eq_tm s0)
         (compSubstRen_ty sigma_ty zeta_ty theta_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal
-        (compSubstRen_vl sigma_ty sigma_vl zeta_ty zeta_vl theta_ty theta_vl
-           Eq_ty Eq_vl s0)
-  end
-with compSubstRen_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (theta_ty : nat -> ty)
-(theta_vl : nat -> vl)
-(Eq_ty : forall x, funcomp (ren_ty zeta_ty) sigma_ty x = theta_ty x)
-(Eq_vl : forall x, funcomp (ren_vl zeta_ty zeta_vl) sigma_vl x = theta_vl x)
-(s : vl) {struct s} :
-ren_vl zeta_ty zeta_vl (subst_vl sigma_ty sigma_vl s) =
-subst_vl theta_ty theta_vl s :=
-  match s with
-  | var_vl s0 => Eq_vl s0
   | TmAbs s0 s1 =>
       congr_TmAbs (compSubstRen_ty sigma_ty zeta_ty theta_ty Eq_ty s0)
-        (compSubstRen_tm (up_vl_ty sigma_ty) (up_vl_vl sigma_vl)
-           (upRen_vl_ty zeta_ty) (upRen_vl_vl zeta_vl) (up_vl_ty theta_ty)
-           (up_vl_vl theta_vl) (up_subst_ren_vl_ty _ _ _ Eq_ty)
-           (up_subst_ren_vl_vl _ _ _ _ Eq_vl) s1)
+        (compSubstRen_tm (up_tm_ty sigma_ty) (up_tm_tm sigma_tm)
+           (upRen_tm_ty zeta_ty) (upRen_tm_tm zeta_tm) (up_tm_ty theta_ty)
+           (up_tm_tm theta_tm) (up_subst_ren_tm_ty _ _ _ Eq_ty)
+           (up_subst_ren_tm_tm _ _ _ _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (compSubstRen_tm (up_ty_ty sigma_ty) (up_ty_vl sigma_vl)
-           (upRen_ty_ty zeta_ty) (upRen_ty_vl zeta_vl) (up_ty_ty theta_ty)
-           (up_ty_vl theta_vl) (up_subst_ren_ty_ty _ _ _ Eq_ty)
-           (up_subst_ren_ty_vl _ _ _ _ Eq_vl) s0)
+        (compSubstRen_tm (up_ty_ty sigma_ty) (up_ty_tm sigma_tm)
+           (upRen_ty_ty zeta_ty) (upRen_ty_tm zeta_tm) (up_ty_ty theta_ty)
+           (up_ty_tm theta_tm) (up_subst_ren_ty_ty _ _ _ Eq_ty)
+           (up_subst_ren_ty_tm _ _ _ _ Eq_tm) s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma up_subst_subst_ty_vl (sigma : nat -> vl) (tau_ty : nat -> ty)
-  (tau_vl : nat -> vl) (theta : nat -> vl)
-  (Eq : forall x, funcomp (subst_vl tau_ty tau_vl) sigma x = theta x) :
+Lemma up_subst_subst_ty_tm (sigma : nat -> tm) (tau_ty : nat -> ty)
+  (tau_tm : nat -> tm) (theta : nat -> tm)
+  (Eq : forall x, funcomp (subst_tm tau_ty tau_tm) sigma x = theta x) :
   forall x,
-  funcomp (subst_vl (up_ty_ty tau_ty) (up_ty_vl tau_vl)) (up_ty_vl sigma) x =
-  up_ty_vl theta x.
+  funcomp (subst_tm (up_ty_ty tau_ty) (up_ty_tm tau_tm)) (up_ty_tm sigma) x =
+  up_ty_tm theta x.
 Proof.
 exact (fun n =>
        eq_trans
-         (compRenSubst_vl shift id (up_ty_ty tau_ty) (up_ty_vl tau_vl)
-            (funcomp (up_ty_ty tau_ty) shift) (funcomp (up_ty_vl tau_vl) id)
+         (compRenSubst_tm shift id (up_ty_ty tau_ty) (up_ty_tm tau_tm)
+            (funcomp (up_ty_ty tau_ty) shift) (funcomp (up_ty_tm tau_tm) id)
             (fun x => eq_refl) (fun x => eq_refl) (sigma n))
          (eq_trans
             (eq_sym
-               (compSubstRen_vl tau_ty tau_vl shift id
+               (compSubstRen_tm tau_ty tau_tm shift id
                   (funcomp (ren_ty shift) tau_ty)
-                  (funcomp (ren_vl shift id) tau_vl) (fun x => eq_refl)
+                  (funcomp (ren_tm shift id) tau_tm) (fun x => eq_refl)
                   (fun x => eq_refl) (sigma n)))
-            (ap (ren_vl shift id) (Eq n)))).
+            (ap (ren_tm shift id) (Eq n)))).
 Qed.
 
-Lemma up_subst_subst_vl_ty (sigma : nat -> ty) (tau_ty : nat -> ty)
+Lemma up_subst_subst_tm_ty (sigma : nat -> ty) (tau_ty : nat -> ty)
   (theta : nat -> ty)
   (Eq : forall x, funcomp (subst_ty tau_ty) sigma x = theta x) :
   forall x,
-  funcomp (subst_ty (up_vl_ty tau_ty)) (up_vl_ty sigma) x = up_vl_ty theta x.
+  funcomp (subst_ty (up_tm_ty tau_ty)) (up_tm_ty sigma) x = up_tm_ty theta x.
 Proof.
 exact (fun n =>
        eq_trans
-         (compRenSubst_ty id (up_vl_ty tau_ty) (funcomp (up_vl_ty tau_ty) id)
+         (compRenSubst_ty id (up_tm_ty tau_ty) (funcomp (up_tm_ty tau_ty) id)
             (fun x => eq_refl) (sigma n))
          (eq_trans
             (eq_sym
@@ -971,367 +890,231 @@ exact (fun n =>
             (ap (ren_ty id) (Eq n)))).
 Qed.
 
-Lemma up_subst_subst_vl_vl (sigma : nat -> vl) (tau_ty : nat -> ty)
-  (tau_vl : nat -> vl) (theta : nat -> vl)
-  (Eq : forall x, funcomp (subst_vl tau_ty tau_vl) sigma x = theta x) :
+Lemma up_subst_subst_tm_tm (sigma : nat -> tm) (tau_ty : nat -> ty)
+  (tau_tm : nat -> tm) (theta : nat -> tm)
+  (Eq : forall x, funcomp (subst_tm tau_ty tau_tm) sigma x = theta x) :
   forall x,
-  funcomp (subst_vl (up_vl_ty tau_ty) (up_vl_vl tau_vl)) (up_vl_vl sigma) x =
-  up_vl_vl theta x.
+  funcomp (subst_tm (up_tm_ty tau_ty) (up_tm_tm tau_tm)) (up_tm_tm sigma) x =
+  up_tm_tm theta x.
 Proof.
 exact (fun n =>
        match n with
        | S n' =>
            eq_trans
-             (compRenSubst_vl id shift (up_vl_ty tau_ty) (up_vl_vl tau_vl)
-                (funcomp (up_vl_ty tau_ty) id)
-                (funcomp (up_vl_vl tau_vl) shift) (fun x => eq_refl)
+             (compRenSubst_tm id shift (up_tm_ty tau_ty) (up_tm_tm tau_tm)
+                (funcomp (up_tm_ty tau_ty) id)
+                (funcomp (up_tm_tm tau_tm) shift) (fun x => eq_refl)
                 (fun x => eq_refl) (sigma n'))
              (eq_trans
                 (eq_sym
-                   (compSubstRen_vl tau_ty tau_vl id shift
+                   (compSubstRen_tm tau_ty tau_tm id shift
                       (funcomp (ren_ty id) tau_ty)
-                      (funcomp (ren_vl id shift) tau_vl) (fun x => eq_refl)
+                      (funcomp (ren_tm id shift) tau_tm) (fun x => eq_refl)
                       (fun x => eq_refl) (sigma n')))
-                (ap (ren_vl id shift) (Eq n')))
+                (ap (ren_tm id shift) (Eq n')))
        | O => eq_refl
        end).
 Qed.
 
-Fixpoint compSubstSubst_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(tau_ty : nat -> ty) (tau_vl : nat -> vl) (theta_ty : nat -> ty)
-(theta_vl : nat -> vl)
+Fixpoint compSubstSubst_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+(tau_ty : nat -> ty) (tau_tm : nat -> tm) (theta_ty : nat -> ty)
+(theta_tm : nat -> tm)
 (Eq_ty : forall x, funcomp (subst_ty tau_ty) sigma_ty x = theta_ty x)
-(Eq_vl : forall x, funcomp (subst_vl tau_ty tau_vl) sigma_vl x = theta_vl x)
+(Eq_tm : forall x, funcomp (subst_tm tau_ty tau_tm) sigma_tm x = theta_tm x)
 (s : tm) {struct s} :
-subst_tm tau_ty tau_vl (subst_tm sigma_ty sigma_vl s) =
-subst_tm theta_ty theta_vl s :=
+subst_tm tau_ty tau_tm (subst_tm sigma_ty sigma_tm s) =
+subst_tm theta_ty theta_tm s :=
   match s with
+  | var_tm s0 => Eq_tm s0
   | TmApp s0 s1 =>
       congr_TmApp
-        (compSubstSubst_tm sigma_ty sigma_vl tau_ty tau_vl theta_ty theta_vl
-           Eq_ty Eq_vl s0)
-        (compSubstSubst_tm sigma_ty sigma_vl tau_ty tau_vl theta_ty theta_vl
-           Eq_ty Eq_vl s1)
+        (compSubstSubst_tm sigma_ty sigma_tm tau_ty tau_tm theta_ty theta_tm
+           Eq_ty Eq_tm s0)
+        (compSubstSubst_tm sigma_ty sigma_tm tau_ty tau_tm theta_ty theta_tm
+           Eq_ty Eq_tm s1)
   | TmTApp s0 s1 =>
       congr_TmTApp
-        (compSubstSubst_tm sigma_ty sigma_vl tau_ty tau_vl theta_ty theta_vl
-           Eq_ty Eq_vl s0)
+        (compSubstSubst_tm sigma_ty sigma_tm tau_ty tau_tm theta_ty theta_tm
+           Eq_ty Eq_tm s0)
         (compSubstSubst_ty sigma_ty tau_ty theta_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal
-        (compSubstSubst_vl sigma_ty sigma_vl tau_ty tau_vl theta_ty theta_vl
-           Eq_ty Eq_vl s0)
-  end
-with compSubstSubst_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(tau_ty : nat -> ty) (tau_vl : nat -> vl) (theta_ty : nat -> ty)
-(theta_vl : nat -> vl)
-(Eq_ty : forall x, funcomp (subst_ty tau_ty) sigma_ty x = theta_ty x)
-(Eq_vl : forall x, funcomp (subst_vl tau_ty tau_vl) sigma_vl x = theta_vl x)
-(s : vl) {struct s} :
-subst_vl tau_ty tau_vl (subst_vl sigma_ty sigma_vl s) =
-subst_vl theta_ty theta_vl s :=
-  match s with
-  | var_vl s0 => Eq_vl s0
   | TmAbs s0 s1 =>
       congr_TmAbs (compSubstSubst_ty sigma_ty tau_ty theta_ty Eq_ty s0)
-        (compSubstSubst_tm (up_vl_ty sigma_ty) (up_vl_vl sigma_vl)
-           (up_vl_ty tau_ty) (up_vl_vl tau_vl) (up_vl_ty theta_ty)
-           (up_vl_vl theta_vl) (up_subst_subst_vl_ty _ _ _ Eq_ty)
-           (up_subst_subst_vl_vl _ _ _ _ Eq_vl) s1)
+        (compSubstSubst_tm (up_tm_ty sigma_ty) (up_tm_tm sigma_tm)
+           (up_tm_ty tau_ty) (up_tm_tm tau_tm) (up_tm_ty theta_ty)
+           (up_tm_tm theta_tm) (up_subst_subst_tm_ty _ _ _ Eq_ty)
+           (up_subst_subst_tm_tm _ _ _ _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (compSubstSubst_tm (up_ty_ty sigma_ty) (up_ty_vl sigma_vl)
-           (up_ty_ty tau_ty) (up_ty_vl tau_vl) (up_ty_ty theta_ty)
-           (up_ty_vl theta_vl) (up_subst_subst_ty_ty _ _ _ Eq_ty)
-           (up_subst_subst_ty_vl _ _ _ _ Eq_vl) s0)
+        (compSubstSubst_tm (up_ty_ty sigma_ty) (up_ty_tm sigma_tm)
+           (up_ty_ty tau_ty) (up_ty_tm tau_tm) (up_ty_ty theta_ty)
+           (up_ty_tm theta_tm) (up_subst_subst_ty_ty _ _ _ Eq_ty)
+           (up_subst_subst_ty_tm _ _ _ _ Eq_tm) s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma renRen_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (s : tm) :
-  ren_tm zeta_ty zeta_vl (ren_tm xi_ty xi_vl s) =
-  ren_tm (funcomp zeta_ty xi_ty) (funcomp zeta_vl xi_vl) s.
+Lemma renRen_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+  (zeta_ty : nat -> nat) (zeta_tm : nat -> nat) (s : tm) :
+  ren_tm zeta_ty zeta_tm (ren_tm xi_ty xi_tm s) =
+  ren_tm (funcomp zeta_ty xi_ty) (funcomp zeta_tm xi_tm) s.
 Proof.
-exact (compRenRen_tm xi_ty xi_vl zeta_ty zeta_vl _ _ (fun n => eq_refl)
+exact (compRenRen_tm xi_ty xi_tm zeta_ty zeta_tm _ _ (fun n => eq_refl)
          (fun n => eq_refl) s).
 Qed.
 
-Lemma renRen'_tm_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) :
+Lemma renRen'_tm_pointwise (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+  (zeta_ty : nat -> nat) (zeta_tm : nat -> nat) :
   pointwise_relation _ eq
-    (funcomp (ren_tm zeta_ty zeta_vl) (ren_tm xi_ty xi_vl))
-    (ren_tm (funcomp zeta_ty xi_ty) (funcomp zeta_vl xi_vl)).
+    (funcomp (ren_tm zeta_ty zeta_tm) (ren_tm xi_ty xi_tm))
+    (ren_tm (funcomp zeta_ty xi_ty) (funcomp zeta_tm xi_tm)).
 Proof.
 exact (fun s =>
-       compRenRen_tm xi_ty xi_vl zeta_ty zeta_vl _ _ (fun n => eq_refl)
+       compRenRen_tm xi_ty xi_tm zeta_ty zeta_tm _ _ (fun n => eq_refl)
          (fun n => eq_refl) s).
 Qed.
 
-Lemma renRen_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (s : vl) :
-  ren_vl zeta_ty zeta_vl (ren_vl xi_ty xi_vl s) =
-  ren_vl (funcomp zeta_ty xi_ty) (funcomp zeta_vl xi_vl) s.
+Lemma renSubst_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+  (tau_ty : nat -> ty) (tau_tm : nat -> tm) (s : tm) :
+  subst_tm tau_ty tau_tm (ren_tm xi_ty xi_tm s) =
+  subst_tm (funcomp tau_ty xi_ty) (funcomp tau_tm xi_tm) s.
 Proof.
-exact (compRenRen_vl xi_ty xi_vl zeta_ty zeta_vl _ _ (fun n => eq_refl)
+exact (compRenSubst_tm xi_ty xi_tm tau_ty tau_tm _ _ (fun n => eq_refl)
          (fun n => eq_refl) s).
 Qed.
 
-Lemma renRen'_vl_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) :
+Lemma renSubst_tm_pointwise (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+  (tau_ty : nat -> ty) (tau_tm : nat -> tm) :
   pointwise_relation _ eq
-    (funcomp (ren_vl zeta_ty zeta_vl) (ren_vl xi_ty xi_vl))
-    (ren_vl (funcomp zeta_ty xi_ty) (funcomp zeta_vl xi_vl)).
+    (funcomp (subst_tm tau_ty tau_tm) (ren_tm xi_ty xi_tm))
+    (subst_tm (funcomp tau_ty xi_ty) (funcomp tau_tm xi_tm)).
 Proof.
 exact (fun s =>
-       compRenRen_vl xi_ty xi_vl zeta_ty zeta_vl _ _ (fun n => eq_refl)
+       compRenSubst_tm xi_ty xi_tm tau_ty tau_tm _ _ (fun n => eq_refl)
          (fun n => eq_refl) s).
 Qed.
 
-Lemma renSubst_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) (s : tm) :
-  subst_tm tau_ty tau_vl (ren_tm xi_ty xi_vl s) =
-  subst_tm (funcomp tau_ty xi_ty) (funcomp tau_vl xi_vl) s.
-Proof.
-exact (compRenSubst_tm xi_ty xi_vl tau_ty tau_vl _ _ (fun n => eq_refl)
-         (fun n => eq_refl) s).
-Qed.
-
-Lemma renSubst_tm_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) :
-  pointwise_relation _ eq
-    (funcomp (subst_tm tau_ty tau_vl) (ren_tm xi_ty xi_vl))
-    (subst_tm (funcomp tau_ty xi_ty) (funcomp tau_vl xi_vl)).
-Proof.
-exact (fun s =>
-       compRenSubst_tm xi_ty xi_vl tau_ty tau_vl _ _ (fun n => eq_refl)
-         (fun n => eq_refl) s).
-Qed.
-
-Lemma renSubst_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) (s : vl) :
-  subst_vl tau_ty tau_vl (ren_vl xi_ty xi_vl s) =
-  subst_vl (funcomp tau_ty xi_ty) (funcomp tau_vl xi_vl) s.
-Proof.
-exact (compRenSubst_vl xi_ty xi_vl tau_ty tau_vl _ _ (fun n => eq_refl)
-         (fun n => eq_refl) s).
-Qed.
-
-Lemma renSubst_vl_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) :
-  pointwise_relation _ eq
-    (funcomp (subst_vl tau_ty tau_vl) (ren_vl xi_ty xi_vl))
-    (subst_vl (funcomp tau_ty xi_ty) (funcomp tau_vl xi_vl)).
-Proof.
-exact (fun s =>
-       compRenSubst_vl xi_ty xi_vl tau_ty tau_vl _ _ (fun n => eq_refl)
-         (fun n => eq_refl) s).
-Qed.
-
-Lemma substRen_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (s : tm) :
-  ren_tm zeta_ty zeta_vl (subst_tm sigma_ty sigma_vl s) =
+Lemma substRen_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+  (zeta_ty : nat -> nat) (zeta_tm : nat -> nat) (s : tm) :
+  ren_tm zeta_ty zeta_tm (subst_tm sigma_ty sigma_tm s) =
   subst_tm (funcomp (ren_ty zeta_ty) sigma_ty)
-    (funcomp (ren_vl zeta_ty zeta_vl) sigma_vl) s.
+    (funcomp (ren_tm zeta_ty zeta_tm) sigma_tm) s.
 Proof.
-exact (compSubstRen_tm sigma_ty sigma_vl zeta_ty zeta_vl _ _
+exact (compSubstRen_tm sigma_ty sigma_tm zeta_ty zeta_tm _ _
          (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
-Lemma substRen_tm_pointwise (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) :
+Lemma substRen_tm_pointwise (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+  (zeta_ty : nat -> nat) (zeta_tm : nat -> nat) :
   pointwise_relation _ eq
-    (funcomp (ren_tm zeta_ty zeta_vl) (subst_tm sigma_ty sigma_vl))
+    (funcomp (ren_tm zeta_ty zeta_tm) (subst_tm sigma_ty sigma_tm))
     (subst_tm (funcomp (ren_ty zeta_ty) sigma_ty)
-       (funcomp (ren_vl zeta_ty zeta_vl) sigma_vl)).
+       (funcomp (ren_tm zeta_ty zeta_tm) sigma_tm)).
 Proof.
 exact (fun s =>
-       compSubstRen_tm sigma_ty sigma_vl zeta_ty zeta_vl _ _
+       compSubstRen_tm sigma_ty sigma_tm zeta_ty zeta_tm _ _
          (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
-Lemma substRen_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) (s : vl) :
-  ren_vl zeta_ty zeta_vl (subst_vl sigma_ty sigma_vl s) =
-  subst_vl (funcomp (ren_ty zeta_ty) sigma_ty)
-    (funcomp (ren_vl zeta_ty zeta_vl) sigma_vl) s.
-Proof.
-exact (compSubstRen_vl sigma_ty sigma_vl zeta_ty zeta_vl _ _
-         (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma substRen_vl_pointwise (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (zeta_ty : nat -> nat) (zeta_vl : nat -> nat) :
-  pointwise_relation _ eq
-    (funcomp (ren_vl zeta_ty zeta_vl) (subst_vl sigma_ty sigma_vl))
-    (subst_vl (funcomp (ren_ty zeta_ty) sigma_ty)
-       (funcomp (ren_vl zeta_ty zeta_vl) sigma_vl)).
-Proof.
-exact (fun s =>
-       compSubstRen_vl sigma_ty sigma_vl zeta_ty zeta_vl _ _
-         (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma substSubst_tm (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) (s : tm) :
-  subst_tm tau_ty tau_vl (subst_tm sigma_ty sigma_vl s) =
+Lemma substSubst_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+  (tau_ty : nat -> ty) (tau_tm : nat -> tm) (s : tm) :
+  subst_tm tau_ty tau_tm (subst_tm sigma_ty sigma_tm s) =
   subst_tm (funcomp (subst_ty tau_ty) sigma_ty)
-    (funcomp (subst_vl tau_ty tau_vl) sigma_vl) s.
+    (funcomp (subst_tm tau_ty tau_tm) sigma_tm) s.
 Proof.
-exact (compSubstSubst_tm sigma_ty sigma_vl tau_ty tau_vl _ _
+exact (compSubstSubst_tm sigma_ty sigma_tm tau_ty tau_tm _ _
          (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
-Lemma substSubst_tm_pointwise (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) :
+Lemma substSubst_tm_pointwise (sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
+  (tau_ty : nat -> ty) (tau_tm : nat -> tm) :
   pointwise_relation _ eq
-    (funcomp (subst_tm tau_ty tau_vl) (subst_tm sigma_ty sigma_vl))
+    (funcomp (subst_tm tau_ty tau_tm) (subst_tm sigma_ty sigma_tm))
     (subst_tm (funcomp (subst_ty tau_ty) sigma_ty)
-       (funcomp (subst_vl tau_ty tau_vl) sigma_vl)).
+       (funcomp (subst_tm tau_ty tau_tm) sigma_tm)).
 Proof.
 exact (fun s =>
-       compSubstSubst_tm sigma_ty sigma_vl tau_ty tau_vl _ _
+       compSubstSubst_tm sigma_ty sigma_tm tau_ty tau_tm _ _
          (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
-Lemma substSubst_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) (s : vl) :
-  subst_vl tau_ty tau_vl (subst_vl sigma_ty sigma_vl s) =
-  subst_vl (funcomp (subst_ty tau_ty) sigma_ty)
-    (funcomp (subst_vl tau_ty tau_vl) sigma_vl) s.
+Lemma rinstInst_up_ty_tm (xi : nat -> nat) (sigma : nat -> tm)
+  (Eq : forall x, funcomp (var_tm) xi x = sigma x) :
+  forall x, funcomp (var_tm) (upRen_ty_tm xi) x = up_ty_tm sigma x.
 Proof.
-exact (compSubstSubst_vl sigma_ty sigma_vl tau_ty tau_vl _ _
-         (fun n => eq_refl) (fun n => eq_refl) s).
+exact (fun n => ap (ren_tm shift id) (Eq n)).
 Qed.
 
-Lemma substSubst_vl_pointwise (sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-  (tau_ty : nat -> ty) (tau_vl : nat -> vl) :
-  pointwise_relation _ eq
-    (funcomp (subst_vl tau_ty tau_vl) (subst_vl sigma_ty sigma_vl))
-    (subst_vl (funcomp (subst_ty tau_ty) sigma_ty)
-       (funcomp (subst_vl tau_ty tau_vl) sigma_vl)).
-Proof.
-exact (fun s =>
-       compSubstSubst_vl sigma_ty sigma_vl tau_ty tau_vl _ _
-         (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma rinstInst_up_ty_vl (xi : nat -> nat) (sigma : nat -> vl)
-  (Eq : forall x, funcomp (var_vl) xi x = sigma x) :
-  forall x, funcomp (var_vl) (upRen_ty_vl xi) x = up_ty_vl sigma x.
-Proof.
-exact (fun n => ap (ren_vl shift id) (Eq n)).
-Qed.
-
-Lemma rinstInst_up_vl_ty (xi : nat -> nat) (sigma : nat -> ty)
+Lemma rinstInst_up_tm_ty (xi : nat -> nat) (sigma : nat -> ty)
   (Eq : forall x, funcomp (var_ty) xi x = sigma x) :
-  forall x, funcomp (var_ty) (upRen_vl_ty xi) x = up_vl_ty sigma x.
+  forall x, funcomp (var_ty) (upRen_tm_ty xi) x = up_tm_ty sigma x.
 Proof.
 exact (fun n => ap (ren_ty id) (Eq n)).
 Qed.
 
-Lemma rinstInst_up_vl_vl (xi : nat -> nat) (sigma : nat -> vl)
-  (Eq : forall x, funcomp (var_vl) xi x = sigma x) :
-  forall x, funcomp (var_vl) (upRen_vl_vl xi) x = up_vl_vl sigma x.
+Lemma rinstInst_up_tm_tm (xi : nat -> nat) (sigma : nat -> tm)
+  (Eq : forall x, funcomp (var_tm) xi x = sigma x) :
+  forall x, funcomp (var_tm) (upRen_tm_tm xi) x = up_tm_tm sigma x.
 Proof.
 exact (fun n =>
        match n with
-       | S n' => ap (ren_vl id shift) (Eq n')
+       | S n' => ap (ren_tm id shift) (Eq n')
        | O => eq_refl
        end).
 Qed.
 
-Fixpoint rinst_inst_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
+Fixpoint rinst_inst_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat)
+(sigma_ty : nat -> ty) (sigma_tm : nat -> tm)
 (Eq_ty : forall x, funcomp (var_ty) xi_ty x = sigma_ty x)
-(Eq_vl : forall x, funcomp (var_vl) xi_vl x = sigma_vl x) (s : tm) {struct s}
+(Eq_tm : forall x, funcomp (var_tm) xi_tm x = sigma_tm x) (s : tm) {struct s}
    :
-ren_tm xi_ty xi_vl s = subst_tm sigma_ty sigma_vl s :=
+ren_tm xi_ty xi_tm s = subst_tm sigma_ty sigma_tm s :=
   match s with
+  | var_tm s0 => Eq_tm s0
   | TmApp s0 s1 =>
       congr_TmApp
-        (rinst_inst_tm xi_ty xi_vl sigma_ty sigma_vl Eq_ty Eq_vl s0)
-        (rinst_inst_tm xi_ty xi_vl sigma_ty sigma_vl Eq_ty Eq_vl s1)
+        (rinst_inst_tm xi_ty xi_tm sigma_ty sigma_tm Eq_ty Eq_tm s0)
+        (rinst_inst_tm xi_ty xi_tm sigma_ty sigma_tm Eq_ty Eq_tm s1)
   | TmTApp s0 s1 =>
       congr_TmTApp
-        (rinst_inst_tm xi_ty xi_vl sigma_ty sigma_vl Eq_ty Eq_vl s0)
+        (rinst_inst_tm xi_ty xi_tm sigma_ty sigma_tm Eq_ty Eq_tm s0)
         (rinst_inst_ty xi_ty sigma_ty Eq_ty s1)
-  | TmVal s0 =>
-      congr_TmVal
-        (rinst_inst_vl xi_ty xi_vl sigma_ty sigma_vl Eq_ty Eq_vl s0)
-  end
-with rinst_inst_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat)
-(sigma_ty : nat -> ty) (sigma_vl : nat -> vl)
-(Eq_ty : forall x, funcomp (var_ty) xi_ty x = sigma_ty x)
-(Eq_vl : forall x, funcomp (var_vl) xi_vl x = sigma_vl x) (s : vl) {struct s}
-   :
-ren_vl xi_ty xi_vl s = subst_vl sigma_ty sigma_vl s :=
-  match s with
-  | var_vl s0 => Eq_vl s0
   | TmAbs s0 s1 =>
       congr_TmAbs (rinst_inst_ty xi_ty sigma_ty Eq_ty s0)
-        (rinst_inst_tm (upRen_vl_ty xi_ty) (upRen_vl_vl xi_vl)
-           (up_vl_ty sigma_ty) (up_vl_vl sigma_vl)
-           (rinstInst_up_vl_ty _ _ Eq_ty) (rinstInst_up_vl_vl _ _ Eq_vl) s1)
+        (rinst_inst_tm (upRen_tm_ty xi_ty) (upRen_tm_tm xi_tm)
+           (up_tm_ty sigma_ty) (up_tm_tm sigma_tm)
+           (rinstInst_up_tm_ty _ _ Eq_ty) (rinstInst_up_tm_tm _ _ Eq_tm) s1)
   | TmTAbs s0 =>
       congr_TmTAbs
-        (rinst_inst_tm (upRen_ty_ty xi_ty) (upRen_ty_vl xi_vl)
-           (up_ty_ty sigma_ty) (up_ty_vl sigma_vl)
-           (rinstInst_up_ty_ty _ _ Eq_ty) (rinstInst_up_ty_vl _ _ Eq_vl) s0)
+        (rinst_inst_tm (upRen_ty_ty xi_ty) (upRen_ty_tm xi_tm)
+           (up_ty_ty sigma_ty) (up_ty_tm sigma_tm)
+           (rinstInst_up_ty_ty _ _ Eq_ty) (rinstInst_up_ty_tm _ _ Eq_tm) s0)
   | TmUnit => congr_TmUnit
   end.
 
-Lemma rinstInst'_tm (xi_ty : nat -> nat) (xi_vl : nat -> nat) (s : tm) :
-  ren_tm xi_ty xi_vl s =
-  subst_tm (funcomp (var_ty) xi_ty) (funcomp (var_vl) xi_vl) s.
+Lemma rinstInst'_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat) (s : tm) :
+  ren_tm xi_ty xi_tm s =
+  subst_tm (funcomp (var_ty) xi_ty) (funcomp (var_tm) xi_tm) s.
 Proof.
-exact (rinst_inst_tm xi_ty xi_vl _ _ (fun n => eq_refl) (fun n => eq_refl) s).
+exact (rinst_inst_tm xi_ty xi_tm _ _ (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
-Lemma rinstInst'_tm_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat) :
-  pointwise_relation _ eq (ren_tm xi_ty xi_vl)
-    (subst_tm (funcomp (var_ty) xi_ty) (funcomp (var_vl) xi_vl)).
+Lemma rinstInst'_tm_pointwise (xi_ty : nat -> nat) (xi_tm : nat -> nat) :
+  pointwise_relation _ eq (ren_tm xi_ty xi_tm)
+    (subst_tm (funcomp (var_ty) xi_ty) (funcomp (var_tm) xi_tm)).
 Proof.
 exact (fun s =>
-       rinst_inst_tm xi_ty xi_vl _ _ (fun n => eq_refl) (fun n => eq_refl) s).
+       rinst_inst_tm xi_ty xi_tm _ _ (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
-Lemma rinstInst'_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat) (s : vl) :
-  ren_vl xi_ty xi_vl s =
-  subst_vl (funcomp (var_ty) xi_ty) (funcomp (var_vl) xi_vl) s.
+Lemma instId'_tm (s : tm) : subst_tm (var_ty) (var_tm) s = s.
 Proof.
-exact (rinst_inst_vl xi_ty xi_vl _ _ (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma rinstInst'_vl_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat) :
-  pointwise_relation _ eq (ren_vl xi_ty xi_vl)
-    (subst_vl (funcomp (var_ty) xi_ty) (funcomp (var_vl) xi_vl)).
-Proof.
-exact (fun s =>
-       rinst_inst_vl xi_ty xi_vl _ _ (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma instId'_tm (s : tm) : subst_tm (var_ty) (var_vl) s = s.
-Proof.
-exact (idSubst_tm (var_ty) (var_vl) (fun n => eq_refl) (fun n => eq_refl) s).
+exact (idSubst_tm (var_ty) (var_tm) (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
 Lemma instId'_tm_pointwise :
-  pointwise_relation _ eq (subst_tm (var_ty) (var_vl)) id.
+  pointwise_relation _ eq (subst_tm (var_ty) (var_tm)) id.
 Proof.
 exact (fun s =>
-       idSubst_tm (var_ty) (var_vl) (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma instId'_vl (s : vl) : subst_vl (var_ty) (var_vl) s = s.
-Proof.
-exact (idSubst_vl (var_ty) (var_vl) (fun n => eq_refl) (fun n => eq_refl) s).
-Qed.
-
-Lemma instId'_vl_pointwise :
-  pointwise_relation _ eq (subst_vl (var_ty) (var_vl)) id.
-Proof.
-exact (fun s =>
-       idSubst_vl (var_ty) (var_vl) (fun n => eq_refl) (fun n => eq_refl) s).
+       idSubst_tm (var_ty) (var_tm) (fun n => eq_refl) (fun n => eq_refl) s).
 Qed.
 
 Lemma rinstId'_tm (s : tm) : ren_tm id id s = s.
@@ -1345,45 +1128,31 @@ exact (fun s =>
        eq_ind_r (fun t => t = s) (instId'_tm s) (rinstInst'_tm id id s)).
 Qed.
 
-Lemma rinstId'_vl (s : vl) : ren_vl id id s = s.
-Proof.
-exact (eq_ind_r (fun t => t = s) (instId'_vl s) (rinstInst'_vl id id s)).
-Qed.
-
-Lemma rinstId'_vl_pointwise : pointwise_relation _ eq (@ren_vl id id) id.
-Proof.
-exact (fun s =>
-       eq_ind_r (fun t => t = s) (instId'_vl s) (rinstInst'_vl id id s)).
-Qed.
-
-Lemma varL'_vl (sigma_ty : nat -> ty) (sigma_vl : nat -> vl) (x : nat) :
-  subst_vl sigma_ty sigma_vl (var_vl x) = sigma_vl x.
+Lemma varL'_tm (sigma_ty : nat -> ty) (sigma_tm : nat -> tm) (x : nat) :
+  subst_tm sigma_ty sigma_tm (var_tm x) = sigma_tm x.
 Proof.
 exact (eq_refl).
 Qed.
 
-Lemma varL'_vl_pointwise (sigma_ty : nat -> ty) (sigma_vl : nat -> vl) :
-  pointwise_relation _ eq (funcomp (subst_vl sigma_ty sigma_vl) (var_vl))
-    sigma_vl.
+Lemma varL'_tm_pointwise (sigma_ty : nat -> ty) (sigma_tm : nat -> tm) :
+  pointwise_relation _ eq (funcomp (subst_tm sigma_ty sigma_tm) (var_tm))
+    sigma_tm.
 Proof.
 exact (fun x => eq_refl).
 Qed.
 
-Lemma varLRen'_vl (xi_ty : nat -> nat) (xi_vl : nat -> nat) (x : nat) :
-  ren_vl xi_ty xi_vl (var_vl x) = var_vl (xi_vl x).
+Lemma varLRen'_tm (xi_ty : nat -> nat) (xi_tm : nat -> nat) (x : nat) :
+  ren_tm xi_ty xi_tm (var_tm x) = var_tm (xi_tm x).
 Proof.
 exact (eq_refl).
 Qed.
 
-Lemma varLRen'_vl_pointwise (xi_ty : nat -> nat) (xi_vl : nat -> nat) :
-  pointwise_relation _ eq (funcomp (ren_vl xi_ty xi_vl) (var_vl))
-    (funcomp (var_vl) xi_vl).
+Lemma varLRen'_tm_pointwise (xi_ty : nat -> nat) (xi_tm : nat -> nat) :
+  pointwise_relation _ eq (funcomp (ren_tm xi_ty xi_tm) (var_tm))
+    (funcomp (var_tm) xi_tm).
 Proof.
 exact (fun x => eq_refl).
 Qed.
-
-Class Up_vl X Y :=
-    up_vl : X -> Y.
 
 Class Up_tm X Y :=
     up_tm : X -> Y.
@@ -1391,21 +1160,17 @@ Class Up_tm X Y :=
 Class Up_ty X Y :=
     up_ty : X -> Y.
 
-#[global] Instance Subst_vl : (Subst2 _ _ _ _) := @subst_vl.
-
 #[global] Instance Subst_tm : (Subst2 _ _ _ _) := @subst_tm.
 
-#[global] Instance Up_vl_vl : (Up_vl _ _) := @up_vl_vl.
+#[global] Instance Up_tm_tm : (Up_tm _ _) := @up_tm_tm.
 
-#[global] Instance Up_vl_ty : (Up_ty _ _) := @up_vl_ty.
+#[global] Instance Up_tm_ty : (Up_ty _ _) := @up_tm_ty.
 
-#[global] Instance Up_ty_vl : (Up_vl _ _) := @up_ty_vl.
-
-#[global] Instance Ren_vl : (Ren2 _ _ _ _) := @ren_vl.
+#[global] Instance Up_ty_tm : (Up_tm _ _) := @up_ty_tm.
 
 #[global] Instance Ren_tm : (Ren2 _ _ _ _) := @ren_tm.
 
-#[global] Instance VarInstance_vl : (Var _ _) := @var_vl.
+#[global] Instance VarInstance_tm : (Var _ _) := @var_tm.
 
 #[global] Instance Subst_ty : (Subst1 _ _ _) := @subst_ty.
 
@@ -1416,34 +1181,26 @@ Class Up_ty X Y :=
 #[global]
 Instance VarInstance_ty : (Var _ _) := @var_ty.
 
-Notation "s [ sigma_ty ; sigma_vl ]" := (subst_vl sigma_ty sigma_vl s)
-( at level 7, left associativity, only printing)  : subst_scope.
-
-Notation "↑__vl" := up_vl (only printing)  : subst_scope.
-
-Notation "s [ sigma_ty ; sigma_vl ]" := (subst_tm sigma_ty sigma_vl s)
+Notation "s [ sigma_ty ; sigma_tm ]" := (subst_tm sigma_ty sigma_tm s)
 ( at level 7, left associativity, only printing)  : subst_scope.
 
 Notation "↑__tm" := up_tm (only printing)  : subst_scope.
 
-Notation "↑__vl" := up_vl_vl (only printing)  : subst_scope.
+Notation "↑__tm" := up_tm_tm (only printing)  : subst_scope.
 
-Notation "↑__ty" := up_vl_ty (only printing)  : subst_scope.
+Notation "↑__ty" := up_tm_ty (only printing)  : subst_scope.
 
-Notation "↑__vl" := up_ty_vl (only printing)  : subst_scope.
+Notation "↑__tm" := up_ty_tm (only printing)  : subst_scope.
 
-Notation "s ⟨ xi_ty ; xi_vl ⟩" := (ren_vl xi_ty xi_vl s)
+Notation "s ⟨ xi_ty ; xi_tm ⟩" := (ren_tm xi_ty xi_tm s)
 ( at level 7, left associativity, only printing)  : subst_scope.
 
-Notation "s ⟨ xi_ty ; xi_vl ⟩" := (ren_tm xi_ty xi_vl s)
-( at level 7, left associativity, only printing)  : subst_scope.
+Notation "'var'" := var_tm ( at level 1, only printing)  : subst_scope.
 
-Notation "'var'" := var_vl ( at level 1, only printing)  : subst_scope.
+Notation "x '__tm'" := (@ids _ _ VarInstance_tm x)
+( at level 5, format "x __tm", only printing)  : subst_scope.
 
-Notation "x '__vl'" := (@ids _ _ VarInstance_vl x)
-( at level 5, format "x __vl", only printing)  : subst_scope.
-
-Notation "x '__vl'" := (var_vl x) ( at level 5, format "x __vl")  :
+Notation "x '__tm'" := (var_tm x) ( at level 5, format "x __tm")  :
 subst_scope.
 
 Notation "s [ sigma_ty ]" := (subst_ty sigma_ty s)
@@ -1465,38 +1222,15 @@ Notation "x '__ty'" := (var_ty x) ( at level 5, format "x __ty")  :
 subst_scope.
 
 #[global]
-Instance subst_vl_morphism :
- (Proper
-    (respectful (pointwise_relation _ eq)
-       (respectful (pointwise_relation _ eq) (respectful eq eq)))
-    (@subst_vl)).
-Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s t Eq_st =>
-       eq_ind s (fun t' => subst_vl f_ty f_vl s = subst_vl g_ty g_vl t')
-         (ext_vl f_ty f_vl g_ty g_vl Eq_ty Eq_vl s) t Eq_st).
-Qed.
-
-#[global]
-Instance subst_vl_morphism2 :
- (Proper
-    (respectful (pointwise_relation _ eq)
-       (respectful (pointwise_relation _ eq) (pointwise_relation _ eq)))
-    (@subst_vl)).
-Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s =>
-       ext_vl f_ty f_vl g_ty g_vl Eq_ty Eq_vl s).
-Qed.
-
-#[global]
 Instance subst_tm_morphism :
  (Proper
     (respectful (pointwise_relation _ eq)
        (respectful (pointwise_relation _ eq) (respectful eq eq)))
     (@subst_tm)).
 Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s t Eq_st =>
-       eq_ind s (fun t' => subst_tm f_ty f_vl s = subst_tm g_ty g_vl t')
-         (ext_tm f_ty f_vl g_ty g_vl Eq_ty Eq_vl s) t Eq_st).
+exact (fun f_ty g_ty Eq_ty f_tm g_tm Eq_tm s t Eq_st =>
+       eq_ind s (fun t' => subst_tm f_ty f_tm s = subst_tm g_ty g_tm t')
+         (ext_tm f_ty f_tm g_ty g_tm Eq_ty Eq_tm s) t Eq_st).
 Qed.
 
 #[global]
@@ -1506,31 +1240,8 @@ Instance subst_tm_morphism2 :
        (respectful (pointwise_relation _ eq) (pointwise_relation _ eq)))
     (@subst_tm)).
 Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s =>
-       ext_tm f_ty f_vl g_ty g_vl Eq_ty Eq_vl s).
-Qed.
-
-#[global]
-Instance ren_vl_morphism :
- (Proper
-    (respectful (pointwise_relation _ eq)
-       (respectful (pointwise_relation _ eq) (respectful eq eq)))
-    (@ren_vl)).
-Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s t Eq_st =>
-       eq_ind s (fun t' => ren_vl f_ty f_vl s = ren_vl g_ty g_vl t')
-         (extRen_vl f_ty f_vl g_ty g_vl Eq_ty Eq_vl s) t Eq_st).
-Qed.
-
-#[global]
-Instance ren_vl_morphism2 :
- (Proper
-    (respectful (pointwise_relation _ eq)
-       (respectful (pointwise_relation _ eq) (pointwise_relation _ eq)))
-    (@ren_vl)).
-Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s =>
-       extRen_vl f_ty f_vl g_ty g_vl Eq_ty Eq_vl s).
+exact (fun f_ty g_ty Eq_ty f_tm g_tm Eq_tm s =>
+       ext_tm f_ty f_tm g_ty g_tm Eq_ty Eq_tm s).
 Qed.
 
 #[global]
@@ -1540,9 +1251,9 @@ Instance ren_tm_morphism :
        (respectful (pointwise_relation _ eq) (respectful eq eq)))
     (@ren_tm)).
 Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s t Eq_st =>
-       eq_ind s (fun t' => ren_tm f_ty f_vl s = ren_tm g_ty g_vl t')
-         (extRen_tm f_ty f_vl g_ty g_vl Eq_ty Eq_vl s) t Eq_st).
+exact (fun f_ty g_ty Eq_ty f_tm g_tm Eq_tm s t Eq_st =>
+       eq_ind s (fun t' => ren_tm f_ty f_tm s = ren_tm g_ty g_tm t')
+         (extRen_tm f_ty f_tm g_ty g_tm Eq_ty Eq_tm s) t Eq_st).
 Qed.
 
 #[global]
@@ -1552,8 +1263,8 @@ Instance ren_tm_morphism2 :
        (respectful (pointwise_relation _ eq) (pointwise_relation _ eq)))
     (@ren_tm)).
 Proof.
-exact (fun f_ty g_ty Eq_ty f_vl g_vl Eq_vl s =>
-       extRen_tm f_ty f_vl g_ty g_vl Eq_ty Eq_vl s).
+exact (fun f_ty g_ty Eq_ty f_tm g_tm Eq_tm s =>
+       extRen_tm f_ty f_tm g_ty g_tm Eq_ty Eq_tm s).
 Qed.
 
 #[global]
@@ -1594,38 +1305,28 @@ Qed.
 Ltac auto_unfold := repeat
                      unfold VarInstance_ty, Var, ids, Ren_ty, Ren1, ren1,
                       Up_ty_ty, Up_ty, up_ty, Subst_ty, Subst1, subst1,
-                      VarInstance_vl, Var, ids, Ren_tm, Ren2, ren2, Ren_vl,
-                      Ren2, ren2, Up_ty_vl, Up_vl, up_vl, Up_vl_ty, Up_ty,
-                      up_ty, Up_vl_vl, Up_vl, up_vl, Subst_tm, Subst2,
-                      subst2, Subst_vl, Subst2, subst2.
+                      VarInstance_tm, Var, ids, Ren_tm, Ren2, ren2, Up_ty_tm,
+                      Up_tm, up_tm, Up_tm_ty, Up_ty, up_ty, Up_tm_tm, Up_tm,
+                      up_tm, Subst_tm, Subst2, subst2.
 
 Tactic Notation "auto_unfold" "in" "*" := repeat
                                            unfold VarInstance_ty, Var, ids,
                                             Ren_ty, Ren1, ren1, Up_ty_ty,
                                             Up_ty, up_ty, Subst_ty, Subst1,
-                                            subst1, VarInstance_vl, Var, ids,
-                                            Ren_tm, Ren2, ren2, Ren_vl, Ren2,
-                                            ren2, Up_ty_vl, Up_vl, up_vl,
-                                            Up_vl_ty, Up_ty, up_ty, Up_vl_vl,
-                                            Up_vl, up_vl, Subst_tm, Subst2,
-                                            subst2, Subst_vl, Subst2, subst2
+                                            subst1, VarInstance_tm, Var, ids,
+                                            Ren_tm, Ren2, ren2, Up_ty_tm,
+                                            Up_tm, up_tm, Up_tm_ty, Up_ty,
+                                            up_ty, Up_tm_tm, Up_tm, up_tm,
+                                            Subst_tm, Subst2, subst2 
                                             in *.
 
 Ltac asimpl' := repeat (first
-                 [ progress setoid_rewrite substSubst_vl_pointwise
-                 | progress setoid_rewrite substSubst_vl
-                 | progress setoid_rewrite substSubst_tm_pointwise
+                 [ progress setoid_rewrite substSubst_tm_pointwise
                  | progress setoid_rewrite substSubst_tm
-                 | progress setoid_rewrite substRen_vl_pointwise
-                 | progress setoid_rewrite substRen_vl
                  | progress setoid_rewrite substRen_tm_pointwise
                  | progress setoid_rewrite substRen_tm
-                 | progress setoid_rewrite renSubst_vl_pointwise
-                 | progress setoid_rewrite renSubst_vl
                  | progress setoid_rewrite renSubst_tm_pointwise
                  | progress setoid_rewrite renSubst_tm
-                 | progress setoid_rewrite renRen'_vl_pointwise
-                 | progress setoid_rewrite renRen_vl
                  | progress setoid_rewrite renRen'_tm_pointwise
                  | progress setoid_rewrite renRen_tm
                  | progress setoid_rewrite substSubst_ty_pointwise
@@ -1636,16 +1337,12 @@ Ltac asimpl' := repeat (first
                  | progress setoid_rewrite renSubst_ty
                  | progress setoid_rewrite renRen'_ty_pointwise
                  | progress setoid_rewrite renRen_ty
-                 | progress setoid_rewrite varLRen'_vl_pointwise
-                 | progress setoid_rewrite varLRen'_vl
-                 | progress setoid_rewrite varL'_vl_pointwise
-                 | progress setoid_rewrite varL'_vl
-                 | progress setoid_rewrite rinstId'_vl_pointwise
-                 | progress setoid_rewrite rinstId'_vl
+                 | progress setoid_rewrite varLRen'_tm_pointwise
+                 | progress setoid_rewrite varLRen'_tm
+                 | progress setoid_rewrite varL'_tm_pointwise
+                 | progress setoid_rewrite varL'_tm
                  | progress setoid_rewrite rinstId'_tm_pointwise
                  | progress setoid_rewrite rinstId'_tm
-                 | progress setoid_rewrite instId'_vl_pointwise
-                 | progress setoid_rewrite instId'_vl
                  | progress setoid_rewrite instId'_tm_pointwise
                  | progress setoid_rewrite instId'_tm
                  | progress setoid_rewrite varLRen'_ty_pointwise
@@ -1657,36 +1354,30 @@ Ltac asimpl' := repeat (first
                  | progress setoid_rewrite instId'_ty_pointwise
                  | progress setoid_rewrite instId'_ty
                  | progress
-                    unfold up_vl_vl, up_vl_ty, up_ty_vl, upRen_vl_vl,
-                     upRen_vl_ty, upRen_ty_vl, up_ty_ty, upRen_ty_ty, up_ren
-                 | progress
-                    cbn[subst_vl subst_tm ren_vl ren_tm subst_ty ren_ty]
+                    unfold up_tm_tm, up_tm_ty, up_ty_tm, upRen_tm_tm,
+                     upRen_tm_ty, upRen_ty_tm, up_ty_ty, upRen_ty_ty, up_ren
+                 | progress cbn[subst_tm ren_tm subst_ty ren_ty]
                  | progress fsimpl ]).
 
 Ltac asimpl := check_no_evars;
                 repeat
                  unfold VarInstance_ty, Var, ids, Ren_ty, Ren1, ren1,
                   Up_ty_ty, Up_ty, up_ty, Subst_ty, Subst1, subst1,
-                  VarInstance_vl, Var, ids, Ren_tm, Ren2, ren2, Ren_vl, Ren2,
-                  ren2, Up_ty_vl, Up_vl, up_vl, Up_vl_ty, Up_ty, up_ty,
-                  Up_vl_vl, Up_vl, up_vl, Subst_tm, Subst2, subst2, Subst_vl,
-                  Subst2, subst2 in *;
+                  VarInstance_tm, Var, ids, Ren_tm, Ren2, ren2, Up_ty_tm,
+                  Up_tm, up_tm, Up_tm_ty, Up_ty, up_ty, Up_tm_tm, Up_tm,
+                  up_tm, Subst_tm, Subst2, subst2 in *;
                 asimpl'; minimize.
 
 Tactic Notation "asimpl" "in" hyp(J) := revert J; asimpl; intros J.
 
 Tactic Notation "auto_case" := auto_case ltac:(asimpl; cbn; eauto).
 
-Ltac substify := auto_unfold; try setoid_rewrite rinstInst'_vl_pointwise;
-                  try setoid_rewrite rinstInst'_vl;
-                  try setoid_rewrite rinstInst'_tm_pointwise;
+Ltac substify := auto_unfold; try setoid_rewrite rinstInst'_tm_pointwise;
                   try setoid_rewrite rinstInst'_tm;
                   try setoid_rewrite rinstInst'_ty_pointwise;
                   try setoid_rewrite rinstInst'_ty.
 
-Ltac renamify := auto_unfold; try setoid_rewrite_left rinstInst'_vl_pointwise;
-                  try setoid_rewrite_left rinstInst'_vl;
-                  try setoid_rewrite_left rinstInst'_tm_pointwise;
+Ltac renamify := auto_unfold; try setoid_rewrite_left rinstInst'_tm_pointwise;
                   try setoid_rewrite_left rinstInst'_tm;
                   try setoid_rewrite_left rinstInst'_ty_pointwise;
                   try setoid_rewrite_left rinstInst'_ty.
@@ -1697,11 +1388,7 @@ Module Extra.
 
 Import Core.
 
-#[global] Hint Opaque subst_vl: rewrite.
-
 #[global] Hint Opaque subst_tm: rewrite.
-
-#[global] Hint Opaque ren_vl: rewrite.
 
 #[global] Hint Opaque ren_tm: rewrite.
 
