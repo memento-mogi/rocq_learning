@@ -113,7 +113,6 @@ Fixpoint eval_tm (t: tm) : option tm :=
   | _ => None
   end.
 
-
 Definition context := list ty.
 
 Scheme Equality for ty.
