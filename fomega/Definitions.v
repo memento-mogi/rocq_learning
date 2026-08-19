@@ -110,97 +110,127 @@ where "t '-->' t'" := (step t t').
 Definition tm_context := list Ty.
 Definition ty_context := list Ki.
 
-Reserved Notation "<{{ Delta '|--' T '\in' K }}>" (at level 0, Delta at level 99, T custom fomega_ty, K custom fomega_ki).
+Reserved Notation "<[[ Delta '|--' T '\in' K ]]>" (at level 0, Delta at level 99, T custom fomega_ty, K custom fomega_ki).
 
 Inductive has_kind : ty_context -> Ty -> Ki -> Prop :=
   | K_TVar : forall Delta X K1,
       nth_error Delta X = Some K1 ->
-      <{{ Delta |-- X \in K1 }}>
+      <[[ Delta |-- X \in K1 ]]>
   | K_Abs : forall Delta T1 K1 K2,
-      <{{ K1 :: Delta |-- T1 \in K2 }}> ->
-      <{{ Delta |-- \::K1, T1 \in K1 ~> K2 }}>
+      <[[ K1 :: Delta |-- T1 \in K2 ]]> ->
+      <[[ Delta |-- \::K1, T1 \in K1 ~> K2 ]]>
   | K_App : forall Delta T1 T2 K1 K2,
-      <{{ Delta |-- T1 \in K2 ~> K1 }}> ->
-      <{{ Delta |-- T2 \in K2 }}> ->
-      <{{ Delta |-- T1 T2 \in K1 }}>
+      <[[ Delta |-- T1 \in K2 ~> K1 ]]> ->
+      <[[ Delta |-- T2 \in K2 ]]> ->
+      <[[ Delta |-- T1 T2 \in K1 ]]>
   | K_Arr : forall Delta T1 T2,
-      <{{ Delta |-- T1 \in * }}> ->
-      <{{ Delta |-- T2 \in * }}> ->
-      <{{ Delta |-- T1 -> T2 \in * }}>
+      <[[ Delta |-- T1 \in * ]]> ->
+      <[[ Delta |-- T2 \in * ]]> ->
+      <[[ Delta |-- T1 -> T2 \in * ]]>
   | K_All : forall Delta T1 K1,
-      <{{ K1 :: Delta |-- T1 \in * }}> ->
-      <{{ Delta |-- -/::K1, T1 \in * }}>
+      <[[ K1 :: Delta |-- T1 \in * ]]> ->
+      <[[ Delta |-- -/::K1, T1 \in * ]]>
   | K_Unit : forall Delta,
-      <{{ Delta |-- Unit \in * }}>
-where "<{{ Delta '|--' T '\in' K }}>" := (has_kind Delta T K) : fomega_scope.
-
-Reserved Notation "<{{= T1 = T2 =}}>" (at level 0, T1 custom fomega_ty, T2 custom fomega_ty).
-
-Inductive type_eq : Ty -> Ty -> Prop :=
-  | TQ_Refl : forall T1,
-      <{{= T1 = T1 =}}>
-  | TQ_Sym : forall T1 T2,
-      <{{= T1 = T2 =}}> ->
-      <{{= T2 = T1 =}}>
-  | TQ_Trans : forall T1 T2 T3,
-      <{{= T1 = T2 =}}> ->
-      <{{= T2 = T3 =}}> ->
-      <{{= T1 = T3 =}}>
-  | TQ_Abs : forall T1 T2 K1,
-      <{{= T1 = T2 =}}> ->
-      <{{= \::K1, T1 = \::K1, T2 =}}>
-  | TQ_App : forall T1 T2 S1 S2,
-      <{{= T1 = S1 =}}> ->
-      <{{= T2 = S2 =}}> ->
-      <{{= T1 T2 = S1 S2 =}}>
-  | TQ_Arr : forall T1 T2 S1 S2,
-      <{{= T1 = S1 =}}> ->
-      <{{= T2 = S2 =}}> ->
-      <{{= T1 -> T2 = S1 -> S2 =}}>
-  | TQ_All : forall T1 T2 K1,
-      <{{= T1 = T2 =}}> ->
-      <{{= -/::K1, T1 = -/::K1, T2 =}}>
-  | TQ_Unit :
-      <{{= Unit = Unit =}}>
-where "<{{= T1 = T2 =}}>" := (type_eq T1 T2) : fomega_scope.
-
-Reserved Notation "<{ Delta '|' Gamma '|--' t '\in' T }>" (at level 0, Delta at level 99, Gamma at level 99, t custom fomega_tm, T custom fomega_ty).
+      <[[ Delta |-- Unit \in * ]]>
+    where "<[[ Delta '|--' T '\in' K ]]>" := (has_kind Delta T K) : fomega_scope.
 
 Definition ty_ty_betared T1 T2 :=
   ren_Ty Nat.pred (
     subst_Ty (sigma_ty_one 0 (ren_Ty S T2)) T1
   ).
 
+Reserved Notation "T1 ==> T2" (at level 97).
+
+Inductive type_value : Ty -> Prop :=
+  | TV_Abs : forall K T1,
+      type_value T1 ->
+      type_value <{{\::K, T1}}>
+  | TV_Arr : forall T1 T2,
+      type_value T1 ->
+      type_value T2 ->
+      type_value <{{T1 -> T2}}>
+  | TV_All : forall K T1,
+      type_value T1 -> 
+      type_value <{{-/::K, T1}}>
+  | TV_Unit :
+      type_value <{{Unit}}>
+.
+
+Inductive type_eval_step : Ty -> Ty -> Prop :=
+  | TST_Abs : forall T1 T2 K1,
+      T1 ==> T2 ->
+      <{{\::K1, T1}}> ==> <{{\::K1, T2}}>
+  | TST_App1 : forall T1 T2 S1,
+      T1 ==> S1 ->
+      <{{T1 T2}}> ==> <{{S1 T2}}>
+  | TST_App2 : forall T1 T2 S2,
+      type_value T1 ->
+      T2 ==> S2  ->
+      <{{T1 T2}}> ==> <{{T1 S2}}>
+  | TST_Red : forall T1 T2 S K,
+      type_value T1 ->
+      type_value T2 ->
+      S = ty_ty_betared T1 T2 ->
+      <{{(\::K, T1) T2}}> ==> S 
+  | TST_Arr1 : forall T1 T2 S1,
+      T1 ==> S1 ->
+      <{{T1 -> T2}}> ==> <{{S1 -> T2}}>
+  | TST_Arr : forall T1 T2 S2,
+      type_value T1 ->
+      T2 ==> S2  ->
+      <{{T1 -> T2}}> ==> <{{T1 -> S2}}>
+  | TST_All : forall T1 S1 K1,
+      T1 ==> S1 ->
+      <{{-/::K1, T1}}> ==> <{{-/::K1, S1}}> 
+where " T1 ==> T2 " := (type_eval_step T1 T2) : fomega_scope.
+
+Definition type_eval_step_lr T1 T2 := (type_eval_step T1 T2 \/ type_eval_step T2 T1).
+
+Notation "T1 <=> T2" := (type_eval_step_lr T1 T2) (at level 98) : fomega_scope.
+
+Inductive multi {X: Type} (R: X -> X -> Prop) : X -> X -> Prop :=
+  | multi_refl : forall (T : X), multi R T T
+  | multi_step : forall (T1 T2 T3 : X),
+        R T1 T2 ->
+        multi R T2 T3 ->
+        multi R T1 T3.
+
+Definition type_eq T1 T2 := multi type_eval_step_lr T1 T2.
+
+Notation "T1 === T2" := (type_eq T1 T2) (at level 99).
+
+Reserved Notation "<[ Delta '|' Gamma '|--' t '\in' T ]>" (at level 0, Delta at level 99, Gamma at level 99, t custom fomega_tm, T custom fomega_ty).
+
 Inductive has_type : ty_context -> tm_context -> Tm -> Ty -> Prop :=
   | T_Var : forall Delta Gamma x T1,
       nth_error Gamma x = Some T1 ->
-      <{ Delta | Gamma |-- x \in T1 }>
+      <[ Delta | Gamma |-- x \in T1 ]>
   | T_Abs : forall Delta Gamma T1 T2 t1,
-      <{{ Delta |-- T1 \in * }}> ->
-      <{ Delta | T1 :: Gamma |-- t1 \in T2 }> ->
-      <{ Delta | Gamma |-- \:T1, t1 \in T1 -> T2 }>
+      <[[ Delta |-- T1 \in * ]]> ->
+      <[ Delta | T1 :: Gamma |-- t1 \in T2 ]> ->
+      <[ Delta | Gamma |-- \:T1, t1 \in T1 -> T2 ]>
   | T_App : forall Delta Gamma t1 t2 T1 T2,
-      <{ Delta | Gamma |-- t1 \in T1 -> T2 }> ->
-      <{ Delta | Gamma |-- t2 \in T1 }> ->
-      <{ Delta | Gamma |-- t1 t2 \in T2 }>
+      <[ Delta | Gamma |-- t1 \in T1 -> T2 ]> ->
+      <[ Delta | Gamma |-- t2 \in T1 ]> ->
+      <[ Delta | Gamma |-- t1 t2 \in T2 ]>
   | T_TAbs : forall Delta Gamma GammaS t1 K T1,
-      <{ K :: Delta | GammaS |-- t1 \in T1 }> ->
+      <[ K :: Delta | GammaS |-- t1 \in T1 ]> ->
       GammaS = map (ren_Ty S) Gamma ->
-      <{ Delta | Gamma |-- \::K, t1 \in -/::K, T1 }>
+      <[ Delta | Gamma |-- \::K, t1 \in -/::K, T1 ]>
   | T_TApp : forall Delta Gamma t1 K T1 S T1', 
-      <{ Delta | Gamma |-- t1 \in -/::K, T1 }> ->
+      <[ Delta | Gamma |-- t1 \in -/::K, T1 ]> ->
       T1' = ty_ty_betared T1 S ->
-      <{{ Delta |-- S \in K }}> ->
-      <{ Delta | Gamma |-- t1 [S] \in T1' }>
+      <[[ Delta |-- S \in K ]]> ->
+      <[ Delta | Gamma |-- t1 [S] \in T1' ]>
   | T_Conv : forall Delta Gamma t T1 T2,
-      <{ Delta | Gamma |-- t \in T1 }> ->
-      <{{= T1 = T2 =}}> ->
-      <{ Delta | Gamma |-- t \in T2 }>
+      <[ Delta | Gamma |-- t \in T1 ]> ->
+      T1 === T2 ->
+      <[ Delta | Gamma |-- t \in T2 ]>
   | T_Unit : forall Delta Gamma,
-      <{ Delta | Gamma |-- unit \in Unit }>
+      <[ Delta | Gamma |-- unit \in Unit ]>
 
-where "<{ Delta '|' Gamma '|--' t '\in' T }>" := (has_type Delta Gamma t T) : fomega_scope.
+    where "<[ Delta '|' Gamma '|--' t '\in' T ]>" := (has_type Delta Gamma t T) : fomega_scope.
 
 Ltac aunfold := unfold core.funcomp, unscoped.scons, unscoped.shift, unscoped.id.
 Ltac asolve := simpl; asimpl; aunfold; simpl; try auto.
-Ltac dauto := try (intros _x; destruct _x; auto).
+Ltac dauto := try (intros _x; destruct _x; auto). 
